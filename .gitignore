@@ -14,3 +14,9 @@ bin/
 
 # Environment files
 .env
+
+# Local bot config with secrets
+bot.config.yaml
+
+# Local build artifact from `go build ./...`
+bot

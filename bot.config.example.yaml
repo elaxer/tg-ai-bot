@@ -1,0 +1,15 @@
+bot_debug: false
+
+bot_response_delay_min_ms: 900
+bot_response_delay_max_ms: 2200
+
+# 0.1 means 1/10 messages.
+bot_random_reply_chance: 0.1
+
+# Telegram sticker file_id list.
+bot_sticker_file_ids:
+  - "CAACAgIAAxkBAAEWVURprAHinH6_j3YfuBFsrhBM5_-FOAACoQoAAkPzkEsBtfl0U9zjOjoE"
+  - "CAACAgIAAxkBAAEWVUZprAIAAVWnawLw962QrNFWMxmtPVoAAlUAA10ifRaIbT7yOfK-FjoE"
+
+# 0.2 means 20% of triggered replies may be sticker replies.
+bot_random_sticker_chance: 0.2
