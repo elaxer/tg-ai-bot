@@ -38,14 +38,17 @@ go run ./cmd/bot
   - `TELEGRAM_BOT_TOKEN`
   - `OPENAI_API_KEY`
   - `OPENAI_MODEL`
+  - `OPENAI_TTS_MODEL` (default: `gpt-4o-mini-tts`)
   - `OPENAI_SYSTEM_PROMPT`
-- `bot.config.yaml` contains only `BOT_*` behavior settings:
+- `bot.config.yaml` contains bot behavior settings:
   - `bot_debug`
   - `bot_response_delay_min_ms`
   - `bot_response_delay_max_ms`
   - `bot_random_reply_chance`
   - `bot_sticker_file_ids`
   - `bot_random_sticker_chance`
+  - `bot_tts_reply_chance` (default: `0.5`)
+  - `bot_tts_voice` (default: `alloy`)
 
 ## Behavior in Group Chats
 
@@ -54,5 +57,6 @@ go run ./cmd/bot
 - It also responds when a user replies to a message sent by the bot.
 - It can also respond randomly to about 1 out of 10 regular group messages.
 - If stickers are configured, it can randomly send a random sticker instead of text.
+- For generated text replies, it sends TTS voice messages using `bot_tts_reply_chance` (with text fallback if TTS fails).
 - It reacts to about 1 out of 5 group messages using one of: `👍`, `💩`, `🤡`, `💯`, `🤣`.
 - In [@BotFather](https://t.me/BotFather), disable privacy mode (`/setprivacy -> Disable`) so the bot can receive all group messages.

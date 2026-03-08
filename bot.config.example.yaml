@@ -13,3 +13,9 @@ bot_sticker_file_ids:
 
 # 0.2 means 20% of triggered replies may be sticker replies.
 bot_random_sticker_chance: 0.2
+
+# 0.5 means 50% of generated text replies will be sent as voice.
+bot_tts_reply_chance: 0.5
+
+# OpenAI TTS voice (used for ~50% of generated replies).
+bot_tts_voice: "onyx"
