@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,16 +13,24 @@ import (
 const DefaultSystemPrompt = "You are a friendly, informal chat companion in a Telegram group. Respond naturally, briefly, and like a regular friend. Avoid sounding formal, robotic, or like customer support."
 
 type Bot struct {
-	Debug               bool     `yaml:"bot_debug"`
-	OpenAIModel         string   `yaml:"openai_model"`
-	OpenAITTSModel      string   `yaml:"openai_tts_model"`
-	OpenAISystemPrompt  string   `yaml:"openai_system_prompt"`
-	OpenAITTSVoice      string   `yaml:"openai_tts_voice"`
-	ReactionChance      float64  `yaml:"bot_reaction_chance"`
-	RandomReplyChance   float64  `yaml:"bot_random_reply_chance"`
-	StickerFileIDs      []string `yaml:"bot_sticker_file_ids"`
-	RandomStickerChance float64  `yaml:"bot_random_sticker_chance"`
-	TTSReplyChance      float64  `yaml:"bot_tts_reply_chance"`
+	Debug                bool          `yaml:"bot_debug"`
+	LogFilePath          string        `yaml:"log_file_path"`
+	LogLevel             string        `yaml:"log_level"`
+	LogMaxSizeMB         int           `yaml:"log_max_size_mb"`
+	LogMaxBackups        int           `yaml:"log_max_backups"`
+	LogMaxAgeDays        int           `yaml:"log_max_age_days"`
+	LogCompress          bool          `yaml:"log_compress"`
+	OpenAIModel          string        `yaml:"openai_model"`
+	OpenAITTSModel       string        `yaml:"openai_tts_model"`
+	OpenAISystemPrompt   string        `yaml:"openai_system_prompt"`
+	OpenAITTSVoice       string        `yaml:"openai_tts_voice"`
+	Reactions            []string      `yaml:"bot_reactions"`
+	ReactionChance       float64       `yaml:"bot_reaction_chance"`
+	RandomReplyChance    float64       `yaml:"bot_random_reply_chance"`
+	StickerFileIDs       []string      `yaml:"bot_sticker_file_ids"`
+	RandomStickerChance  float64       `yaml:"bot_random_sticker_chance"`
+	TTSReplyChance       float64       `yaml:"bot_tts_reply_chance"`
+	DailyMessageInterval time.Duration `yaml:"bot_daily_message_interval"`
 }
 
 type Runtime struct {
@@ -108,6 +117,21 @@ func LoadDotEnv(path string) error {
 }
 
 func (c *Bot) applyDefaults() {
+	if strings.TrimSpace(c.LogFilePath) == "" {
+		c.LogFilePath = "logs/bot.log"
+	}
+	if strings.TrimSpace(c.LogLevel) == "" {
+		c.LogLevel = "info"
+	}
+	if c.LogMaxSizeMB == 0 {
+		c.LogMaxSizeMB = 50
+	}
+	if c.LogMaxBackups == 0 {
+		c.LogMaxBackups = 10
+	}
+	if c.LogMaxAgeDays == 0 {
+		c.LogMaxAgeDays = 30
+	}
 	if strings.TrimSpace(c.OpenAIModel) == "" {
 		c.OpenAIModel = "gpt-4.1-mini"
 	}
@@ -132,6 +156,12 @@ func (c *Bot) applyDefaults() {
 	if c.TTSReplyChance == 0 {
 		c.TTSReplyChance = 0.5
 	}
+	if c.DailyMessageInterval == 0 {
+		c.DailyMessageInterval = 24 * time.Hour
+	}
+	if len(c.Reactions) == 0 {
+		c.Reactions = []string{"👍", "💩", "🤡", "💯", "🤣"}
+	}
 
 	cleaned := make([]string, 0, len(c.StickerFileIDs))
 	for _, id := range c.StickerFileIDs {
@@ -141,20 +171,47 @@ func (c *Bot) applyDefaults() {
 		}
 	}
 	c.StickerFileIDs = cleaned
+
+	reactions := make([]string, 0, len(c.Reactions))
+	for _, r := range c.Reactions {
+		v := strings.TrimSpace(r)
+		if v != "" {
+			reactions = append(reactions, v)
+		}
+	}
+	c.Reactions = reactions
 }
 
 func (c Bot) validate() error {
+	if strings.TrimSpace(c.LogFilePath) == "" {
+		return fmt.Errorf("log_file_path is required")
+	}
+	if c.LogMaxSizeMB <= 0 {
+		return fmt.Errorf("log_max_size_mb must be > 0")
+	}
+	if c.LogMaxBackups <= 0 {
+		return fmt.Errorf("log_max_backups must be > 0")
+	}
+	if c.LogMaxAgeDays <= 0 {
+		return fmt.Errorf("log_max_age_days must be > 0")
+	}
 	if c.RandomReplyChance < 0 || c.RandomReplyChance > 1 {
 		return fmt.Errorf("bot_random_reply_chance must be between 0 and 1")
 	}
 	if c.ReactionChance < 0 || c.ReactionChance > 1 {
 		return fmt.Errorf("bot_reaction_chance must be between 0 and 1")
 	}
+	if len(c.Reactions) == 0 {
+		return fmt.Errorf("bot_reactions must contain at least one reaction")
+	}
 	if c.RandomStickerChance < 0 || c.RandomStickerChance > 1 {
 		return fmt.Errorf("bot_random_sticker_chance must be between 0 and 1")
 	}
 	if c.TTSReplyChance < 0 || c.TTSReplyChance > 1 {
 		return fmt.Errorf("bot_tts_reply_chance must be between 0 and 1")
+	}
+	if c.DailyMessageInterval <= 0 {
+		return fmt.Errorf("bot_daily_message_interval must be > 0")
 	}
 	return nil
 }

@@ -1,4 +1,10 @@
 bot_debug: false
+log_file_path: "logs/bot.log"
+log_level: "info"
+log_max_size_mb: 50
+log_max_backups: 10
+log_max_age_days: 30
+log_compress: true
 
 openai_model: "gpt-4.1-mini"
 openai_tts_model: "gpt-4o-mini-tts"
@@ -10,6 +16,7 @@ bot_random_reply_chance: 0.1
 
 # 0.2 means react to about 1/5 messages.
 bot_reaction_chance: 0.2
+bot_reactions: ["👍", "💩", "🤡", "💯", "🤣"]
 
 # 0.2 means 20% of triggered replies may be sticker replies.
 bot_random_sticker_chance: 0.2
@@ -17,9 +24,11 @@ bot_random_sticker_chance: 0.2
 # 0.5 means 50% of generated text replies will be sent as voice.
 bot_tts_reply_chance: 0.5
 
+# Interval between proactive messages per chat (duration format, e.g. 24h, 12h, 90m).
+bot_daily_message_interval: 24h
+
 
 # Telegram sticker file_id list.
 bot_sticker_file_ids:
   - "CAACAgIAAxkBAAEWVURprAHinH6_j3YfuBFsrhBM5_-FOAACoQoAAkPzkEsBtfl0U9zjOjoE"
   - "CAACAgIAAxkBAAEWVUZprAIAAVWnawLw962QrNFWMxmtPVoAAlUAA10ifRaIbT7yOfK-FjoE"
-

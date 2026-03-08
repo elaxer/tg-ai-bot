@@ -14,7 +14,7 @@ Simple Telegram chatbot starter written in Go.
 cp .env.example .env
 cp bot.config.example.yaml bot.config.yaml
 # fill .env with TELEGRAM_BOT_TOKEN and OPENAI_API_KEY
-# fill bot.config.yaml with BOT_* behavior settings
+# fill bot.config.yaml with bot settings (models, logging, behavior)
 ```
 
 Optional custom config path:
@@ -29,6 +29,36 @@ export BOT_CONFIG_PATH=./bot.config.yaml
 go run ./cmd/bot
 ```
 
+## ELK Log Viewer (Docker Compose)
+
+Use the bundled ELK stack to view bot logs in Kibana.
+
+1. Start bot so it writes JSON logs to `logs/bot.log`.
+2. Start ELK:
+
+```bash
+docker compose -f docker-compose.elk.yml up -d
+```
+
+3. Open Kibana: `http://localhost:5601`
+4. Create a data view:
+   - Pattern: `bot-logs-*`
+   - Time field: `@timestamp`
+5. Open Discover and filter/search logs.
+
+Useful commands:
+
+```bash
+# Check stack status
+docker compose -f docker-compose.elk.yml ps
+
+# Follow Logstash ingestion logs
+docker compose -f docker-compose.elk.yml logs -f logstash
+
+# Stop ELK
+docker compose -f docker-compose.elk.yml down
+```
+
 ## Configuration Split
 
 - `.env` contains only API credentials:
@@ -36,15 +66,23 @@ go run ./cmd/bot
   - `OPENAI_API_KEY`
 - `bot.config.yaml` contains bot behavior settings:
   - `bot_debug`
+  - `log_file_path` (default: `logs/bot.log`)
+  - `log_level` (default: `info`)
+  - `log_max_size_mb` (default: `50`)
+  - `log_max_backups` (default: `10`)
+  - `log_max_age_days` (default: `30`)
+  - `log_compress` (default: `false`)
   - `openai_model` (default: `gpt-4.1-mini`)
   - `openai_tts_model` (default: `gpt-4o-mini-tts`)
   - `openai_tts_voice` (default: `alloy`)
   - `openai_system_prompt` (default: built-in friendly prompt)
   - `bot_random_reply_chance`
   - `bot_reaction_chance` (default: `0.2`)
+  - `bot_reactions` (default: `["👍","💩","🤡","💯","🤣"]`)
   - `bot_sticker_file_ids`
   - `bot_random_sticker_chance`
   - `bot_tts_reply_chance` (default: `0.5`)
+  - `bot_daily_message_interval` (default: `24h`)
 
 ## Behavior in Group Chats
 
@@ -52,8 +90,9 @@ go run ./cmd/bot
 - It responds with ChatGPT when tagged (for example, `@your_bot_username hello`).
 - It also responds when a user replies to a message sent by the bot.
 - It can also respond randomly to about 1 out of 10 regular group messages.
+- Logs are written in JSON to `log_file_path` with rotation enabled.
 - Reply delay is automatically calculated from incoming message length.
 - If stickers are configured, it can randomly send a random sticker instead of text.
 - For generated text replies, it sends TTS voice messages using `bot_tts_reply_chance` (with text fallback if TTS fails).
-- It reacts using `bot_reaction_chance` with one of: `👍`, `💩`, `🤡`, `💯`, `🤣`.
+- It reacts using `bot_reaction_chance` with emojis from `bot_reactions`.
 - In [@BotFather](https://t.me/BotFather), disable privacy mode (`/setprivacy -> Disable`) so the bot can receive all group messages.

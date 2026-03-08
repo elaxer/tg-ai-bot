@@ -84,6 +84,20 @@ func (c *Client) GenerateSpeech(ctx context.Context, text string) ([]byte, error
 }
 
 func (c *Client) GenerateReply(ctx context.Context, in ReplyInput) (string, error) {
+	return c.generateWithContent(ctx, buildContentInput(in))
+}
+
+func (c *Client) GeneratePromptReply(ctx context.Context, prompt string) (string, error) {
+	content := []map[string]any{
+		{
+			"type": "input_text",
+			"text": strings.TrimSpace(prompt),
+		},
+	}
+	return c.generateWithContent(ctx, content)
+}
+
+func (c *Client) generateWithContent(ctx context.Context, content []map[string]any) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
@@ -93,7 +107,7 @@ func (c *Client) GenerateReply(ctx context.Context, in ReplyInput) (string, erro
 		"input": []map[string]any{
 			{
 				"role":    "user",
-				"content": buildContentInput(in),
+				"content": content,
 			},
 		},
 		"max_output_tokens": 300,
