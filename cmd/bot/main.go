@@ -17,6 +17,10 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags)
 
+	if err := config.LoadDotEnv(".env"); err != nil {
+		log.Fatalf("[ERROR] failed to load .env: %v", err)
+	}
+
 	configPath := strings.TrimSpace(os.Getenv("BOT_CONFIG_PATH"))
 	if configPath == "" {
 		configPath = "bot.config.yaml"
@@ -39,29 +43,28 @@ func main() {
 
 	openaiClient := openai.NewClient(
 		runtimeCfg.OpenAIAPIKey,
-		runtimeCfg.OpenAIModel,
-		runtimeCfg.OpenAITTSModel,
-		botCfg.TTSVoice,
-		runtimeCfg.SystemPrompt,
+		botCfg.OpenAIModel,
+		botCfg.OpenAITTSModel,
+		botCfg.OpenAITTSVoice,
+		botCfg.OpenAISystemPrompt,
 	)
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	processor := bot.NewProcessor(tgBot, botCfg, runtimeCfg, openaiClient, rng)
 
 	log.Printf(
-		"[INFO] bot started config=%s username=@%s id=%d model=%s tts_model=%s tts_voice=%s tts_chance=%.2f debug=%t response_delay_ms=%d-%d random_reply=%.2f stickers=%d sticker_chance=%.2f reaction_chance=0.20",
+		"[INFO] bot started config=%s username=@%s id=%d model=%s tts_model=%s tts_voice=%s tts_chance=%.2f debug=%t random_reply=%.2f stickers=%d sticker_chance=%.2f reaction_chance=%.2f delay_mode=message_length",
 		configPath,
 		tgBot.Self.UserName,
 		tgBot.Self.ID,
-		runtimeCfg.OpenAIModel,
-		runtimeCfg.OpenAITTSModel,
-		botCfg.TTSVoice,
+		botCfg.OpenAIModel,
+		botCfg.OpenAITTSModel,
+		botCfg.OpenAITTSVoice,
 		botCfg.TTSReplyChance,
 		tgBot.Debug,
-		botCfg.ResponseDelayMinMS,
-		botCfg.ResponseDelayMaxMS,
 		botCfg.RandomReplyChance,
 		len(botCfg.StickerFileIDs),
 		botCfg.RandomStickerChance,
+		botCfg.ReactionChance,
 	)
 
 	updateCfg := tgbotapi.NewUpdate(0)

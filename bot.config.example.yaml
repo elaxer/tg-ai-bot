@@ -1,15 +1,15 @@
 bot_debug: false
 
-bot_response_delay_min_ms: 900
-bot_response_delay_max_ms: 2200
+openai_model: "gpt-4.1-mini"
+openai_tts_model: "gpt-4o-mini-tts"
+openai_tts_voice: "onyx"
+openai_system_prompt: "You are a friendly, informal chat companion in a Telegram group. Respond naturally, briefly, and like a regular friend. Avoid sounding formal, robotic, or like customer support."
 
 # 0.1 means 1/10 messages.
 bot_random_reply_chance: 0.1
 
-# Telegram sticker file_id list.
-bot_sticker_file_ids:
-  - "CAACAgIAAxkBAAEWVURprAHinH6_j3YfuBFsrhBM5_-FOAACoQoAAkPzkEsBtfl0U9zjOjoE"
-  - "CAACAgIAAxkBAAEWVUZprAIAAVWnawLw962QrNFWMxmtPVoAAlUAA10ifRaIbT7yOfK-FjoE"
+# 0.2 means react to about 1/5 messages.
+bot_reaction_chance: 0.2
 
 # 0.2 means 20% of triggered replies may be sticker replies.
 bot_random_sticker_chance: 0.2
@@ -17,5 +17,9 @@ bot_random_sticker_chance: 0.2
 # 0.5 means 50% of generated text replies will be sent as voice.
 bot_tts_reply_chance: 0.5
 
-# OpenAI TTS voice (used for ~50% of generated replies).
-bot_tts_voice: "onyx"
+
+# Telegram sticker file_id list.
+bot_sticker_file_ids:
+  - "CAACAgIAAxkBAAEWVURprAHinH6_j3YfuBFsrhBM5_-FOAACoQoAAkPzkEsBtfl0U9zjOjoE"
+  - "CAACAgIAAxkBAAEWVUZprAIAAVWnawLw962QrNFWMxmtPVoAAlUAA10ifRaIbT7yOfK-FjoE"
+

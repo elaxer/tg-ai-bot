@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -12,22 +13,21 @@ const DefaultSystemPrompt = "You are a friendly, informal chat companion in a Te
 
 type Bot struct {
 	Debug               bool     `yaml:"bot_debug"`
-	ResponseDelayMinMS  int      `yaml:"bot_response_delay_min_ms"`
-	ResponseDelayMaxMS  int      `yaml:"bot_response_delay_max_ms"`
+	OpenAIModel         string   `yaml:"openai_model"`
+	OpenAITTSModel      string   `yaml:"openai_tts_model"`
+	OpenAISystemPrompt  string   `yaml:"openai_system_prompt"`
+	OpenAITTSVoice      string   `yaml:"openai_tts_voice"`
+	ReactionChance      float64  `yaml:"bot_reaction_chance"`
 	RandomReplyChance   float64  `yaml:"bot_random_reply_chance"`
 	StickerFileIDs      []string `yaml:"bot_sticker_file_ids"`
 	RandomStickerChance float64  `yaml:"bot_random_sticker_chance"`
 	TTSReplyChance      float64  `yaml:"bot_tts_reply_chance"`
-	TTSVoice            string   `yaml:"bot_tts_voice"`
 }
 
 type Runtime struct {
-	TelegramToken  string
-	OpenAIAPIKey   string
-	OpenAIModel    string
-	OpenAITTSModel string
-	SystemPrompt   string
-	BotTag         string
+	TelegramToken string
+	OpenAIAPIKey  string
+	BotTag        string
 }
 
 func LoadBot(path string) (Bot, error) {
@@ -57,46 +57,80 @@ func LoadRuntimeFromEnv() (Runtime, error) {
 	if openAIAPIKey == "" {
 		return Runtime{}, fmt.Errorf("missing required env: OPENAI_API_KEY")
 	}
-	openAIModel := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
-	if openAIModel == "" {
-		openAIModel = "gpt-4.1-mini"
-	}
-	openAITTSModel := strings.TrimSpace(os.Getenv("OPENAI_TTS_MODEL"))
-	if openAITTSModel == "" {
-		openAITTSModel = "gpt-4o-mini-tts"
-	}
-	systemPrompt := strings.TrimSpace(os.Getenv("OPENAI_SYSTEM_PROMPT"))
-	if systemPrompt == "" {
-		systemPrompt = DefaultSystemPrompt
-	}
-
 	return Runtime{
-		TelegramToken:  token,
-		OpenAIAPIKey:   openAIAPIKey,
-		OpenAIModel:    openAIModel,
-		OpenAITTSModel: openAITTSModel,
-		SystemPrompt:   systemPrompt,
+		TelegramToken: token,
+		OpenAIAPIKey:  openAIAPIKey,
 	}, nil
 }
 
-func (c *Bot) applyDefaults() {
-	if c.ResponseDelayMinMS == 0 {
-		c.ResponseDelayMinMS = 900
+func LoadDotEnv(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("open dotenv: %w", err)
 	}
-	if c.ResponseDelayMaxMS == 0 {
-		c.ResponseDelayMaxMS = 2200
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		// Keep explicit environment variables as highest priority.
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("set env %s: %w", key, err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read dotenv: %w", err)
+	}
+	return nil
+}
+
+func (c *Bot) applyDefaults() {
+	if strings.TrimSpace(c.OpenAIModel) == "" {
+		c.OpenAIModel = "gpt-4.1-mini"
+	}
+	if strings.TrimSpace(c.OpenAITTSModel) == "" {
+		c.OpenAITTSModel = "gpt-4o-mini-tts"
+	}
+	if strings.TrimSpace(c.OpenAISystemPrompt) == "" {
+		c.OpenAISystemPrompt = DefaultSystemPrompt
+	}
+	if strings.TrimSpace(c.OpenAITTSVoice) == "" {
+		c.OpenAITTSVoice = "alloy"
 	}
 	if c.RandomReplyChance == 0 {
 		c.RandomReplyChance = 0.1
+	}
+	if c.ReactionChance == 0 {
+		c.ReactionChance = 0.2
 	}
 	if c.RandomStickerChance == 0 {
 		c.RandomStickerChance = 0.2
 	}
 	if c.TTSReplyChance == 0 {
 		c.TTSReplyChance = 0.5
-	}
-	if strings.TrimSpace(c.TTSVoice) == "" {
-		c.TTSVoice = "alloy"
 	}
 
 	cleaned := make([]string, 0, len(c.StickerFileIDs))
@@ -110,14 +144,11 @@ func (c *Bot) applyDefaults() {
 }
 
 func (c Bot) validate() error {
-	if c.ResponseDelayMinMS < 0 || c.ResponseDelayMaxMS < 0 {
-		return fmt.Errorf("response delay values must be >= 0")
-	}
-	if c.ResponseDelayMaxMS < c.ResponseDelayMinMS {
-		return fmt.Errorf("bot_response_delay_max_ms must be >= bot_response_delay_min_ms")
-	}
 	if c.RandomReplyChance < 0 || c.RandomReplyChance > 1 {
 		return fmt.Errorf("bot_random_reply_chance must be between 0 and 1")
+	}
+	if c.ReactionChance < 0 || c.ReactionChance > 1 {
+		return fmt.Errorf("bot_reaction_chance must be between 0 and 1")
 	}
 	if c.RandomStickerChance < 0 || c.RandomStickerChance > 1 {
 		return fmt.Errorf("bot_random_sticker_chance must be between 0 and 1")
