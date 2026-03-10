@@ -59,6 +59,7 @@ func main() {
 		botCfg.OpenAIModel,
 		botCfg.OpenAITTSModel,
 		botCfg.OpenAITTSVoice,
+		botCfg.OpenAITTSInstructions,
 		botCfg.OpenAISystemPrompt,
 	)
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))

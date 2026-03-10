@@ -23,7 +23,7 @@ import (
 const (
 	defaultConfigPath     = "bot.config.yaml"
 	defaultStatePath      = "data/daily_messages_state.json"
-	defaultCheckInterval  = 15 * time.Minute
+	defaultCheckInterval  = 15 * time.Hour
 	defaultRequestTimeout = 30 * time.Second
 )
 
@@ -80,6 +80,7 @@ func main() {
 		botCfg.OpenAIModel,
 		botCfg.OpenAITTSModel,
 		botCfg.OpenAITTSVoice,
+		botCfg.OpenAITTSInstructions,
 		botCfg.OpenAISystemPrompt,
 	)
 

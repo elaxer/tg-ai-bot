@@ -12,12 +12,13 @@ import (
 )
 
 type Client struct {
-	APIKey       string
-	Model        string
-	TTSModel     string
-	TTSVoice     string
-	SystemPrompt string
-	HTTPClient   *http.Client
+	APIKey          string
+	Model           string
+	TTSModel        string
+	TTSVoice        string
+	TTSInstructions string
+	SystemPrompt    string
+	HTTPClient      *http.Client
 }
 
 type ReplyInput struct {
@@ -29,13 +30,14 @@ type ReplyInput struct {
 	ImageURL          string
 }
 
-func NewClient(apiKey, model, ttsModel, ttsVoice, systemPrompt string) *Client {
+func NewClient(apiKey, model, ttsModel, ttsVoice, ttsInstructions, systemPrompt string) *Client {
 	return &Client{
-		APIKey:       apiKey,
-		Model:        model,
-		TTSModel:     ttsModel,
-		TTSVoice:     ttsVoice,
-		SystemPrompt: systemPrompt,
+		APIKey:          apiKey,
+		Model:           model,
+		TTSModel:        ttsModel,
+		TTSVoice:        ttsVoice,
+		TTSInstructions: ttsInstructions,
+		SystemPrompt:    systemPrompt,
 	}
 }
 
@@ -48,6 +50,9 @@ func (c *Client) GenerateSpeech(ctx context.Context, text string) ([]byte, error
 		"voice":           c.TTSVoice,
 		"input":           text,
 		"response_format": "opus",
+	}
+	if strings.TrimSpace(c.TTSInstructions) != "" {
+		reqBody["instructions"] = c.TTSInstructions
 	}
 
 	payload, err := json.Marshal(reqBody)
