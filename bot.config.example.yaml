@@ -28,6 +28,9 @@ bot_tts_reply_chance: 0.5
 # Interval between proactive messages per chat (duration format, e.g. 24h, 12h, 90m).
 bot_daily_message_interval: 24h
 
+# Path to SQLite database for conversation history.
+conversation_db_path: "data/conversations.db"
+
 # Meme sender configuration.
 bot_meme_subreddits: ["memes", "dankmemes", "me_irl"]
 bot_meme_interval_min: 5h

@@ -23,3 +23,6 @@ bot
 
 # Local runtime state (chat logs, scheduler state)
 data/
+logs/
+
+.DS_Store

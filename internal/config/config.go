@@ -7,40 +7,25 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/constraints"
 	"gopkg.in/yaml.v3"
 )
 
-const DefaultSystemPrompt = "You are a friendly, informal chat companion in a Telegram group. Respond naturally, briefly, and like a regular friend. Avoid sounding formal, robotic, or like customer support."
+const defaultSystemPrompt = "You are a friendly, informal chat companion in a Telegram group. Respond naturally, briefly, and like a regular friend. Avoid sounding formal, robotic, or like customer support."
 
 type Bot struct {
-	Debug                 bool          `yaml:"bot_debug"`
-	LogFilePath           string        `yaml:"log_file_path"`
-	LogLevel              string        `yaml:"log_level"`
-	LogMaxSizeMB          int           `yaml:"log_max_size_mb"`
-	LogMaxBackups         int           `yaml:"log_max_backups"`
-	LogMaxAgeDays         int           `yaml:"log_max_age_days"`
-	LogCompress           bool          `yaml:"log_compress"`
-	OpenAIModel           string        `yaml:"openai_model"`
-	OpenAITTSModel        string        `yaml:"openai_tts_model"`
-	OpenAISystemPrompt    string        `yaml:"openai_system_prompt"`
-	OpenAITTSVoice        string        `yaml:"openai_tts_voice"`
-	OpenAITTSInstructions string        `yaml:"openai_tts_instructions"`
-	Reactions             []string      `yaml:"bot_reactions"`
-	ReactionChance        float64       `yaml:"bot_reaction_chance"`
-	RandomReplyChance     float64       `yaml:"bot_random_reply_chance"`
-	StickerFileIDs        []string      `yaml:"bot_sticker_file_ids"`
-	RandomStickerChance   float64       `yaml:"bot_random_sticker_chance"`
-	TTSReplyChance        float64       `yaml:"bot_tts_reply_chance"`
-	DailyMessageInterval  time.Duration `yaml:"bot_daily_message_interval"`
-	MemeSubreddits        []string      `yaml:"bot_meme_subreddits"`
-	MemeIntervalMin       time.Duration `yaml:"bot_meme_interval_min"`
-	MemeIntervalMax       time.Duration `yaml:"bot_meme_interval_max"`
-}
-
-type Runtime struct {
-	TelegramToken string
-	OpenAIAPIKey  string
-	BotTag        string
+	Debug                bool          `yaml:"bot_debug"`
+	Log                  LogConfig     `yaml:",inline"`
+	OpenAI               OpenAIConfig  `yaml:",inline"`
+	Memes                MemeConfig    `yaml:",inline"`
+	Reactions            []string      `yaml:"bot_reactions"`
+	ReactionChance       float64       `yaml:"bot_reaction_chance"`
+	RandomReplyChance    float64       `yaml:"bot_random_reply_chance"`
+	StickerFileIDs       []string      `yaml:"bot_sticker_file_ids"`
+	RandomStickerChance  float64       `yaml:"bot_random_sticker_chance"`
+	TTSReplyChance       float64       `yaml:"bot_tts_reply_chance"`
+	DailyMessageInterval time.Duration `yaml:"bot_daily_message_interval"`
+	DBPath               string        `yaml:"conversation_db_path"`
 }
 
 func LoadBot(path string) (Bot, error) {
@@ -120,106 +105,50 @@ func LoadDotEnv(path string) error {
 	return nil
 }
 
+func setDefaultNum[T constraints.Integer | constraints.Float | time.Duration](ptr *T, defaultVal T) {
+	if *ptr == 0 {
+		*ptr = defaultVal
+	}
+}
+func setDefaultStr(ptr *string, defaultVal string) {
+	if strings.TrimSpace(*ptr) == "" {
+		*ptr = defaultVal
+	}
+}
+
 func (c *Bot) applyDefaults() {
-	if strings.TrimSpace(c.LogFilePath) == "" {
-		c.LogFilePath = "logs/bot.log"
-	}
-	if strings.TrimSpace(c.LogLevel) == "" {
-		c.LogLevel = "info"
-	}
-	if c.LogMaxSizeMB == 0 {
-		c.LogMaxSizeMB = 50
-	}
-	if c.LogMaxBackups == 0 {
-		c.LogMaxBackups = 10
-	}
-	if c.LogMaxAgeDays == 0 {
-		c.LogMaxAgeDays = 30
-	}
-	if strings.TrimSpace(c.OpenAIModel) == "" {
-		c.OpenAIModel = "gpt-4.1-mini"
-	}
-	if strings.TrimSpace(c.OpenAITTSModel) == "" {
-		c.OpenAITTSModel = "gpt-4o-mini-tts"
-	}
-	if strings.TrimSpace(c.OpenAISystemPrompt) == "" {
-		c.OpenAISystemPrompt = DefaultSystemPrompt
-	}
-	if strings.TrimSpace(c.OpenAITTSVoice) == "" {
-		c.OpenAITTSVoice = "alloy"
-	}
-	if strings.TrimSpace(c.OpenAITTSInstructions) == "" {
-		c.OpenAITTSInstructions = "Speak with a natural England (British English) accent."
-	}
-	if c.RandomReplyChance == 0 {
-		c.RandomReplyChance = 0.1
-	}
-	if c.ReactionChance == 0 {
-		c.ReactionChance = 0.2
-	}
-	if c.RandomStickerChance == 0 {
-		c.RandomStickerChance = 0.2
-	}
-	if c.TTSReplyChance == 0 {
-		c.TTSReplyChance = 0.5
-	}
-	if c.DailyMessageInterval == 0 {
-		c.DailyMessageInterval = 24 * time.Hour
-	}
-	if c.MemeIntervalMin <= 0 {
-		c.MemeIntervalMin = 5 * time.Hour
-	}
-	if c.MemeIntervalMax <= 0 {
-		c.MemeIntervalMax = 6 * time.Hour
-	}
-	if len(c.Reactions) == 0 {
-		c.Reactions = []string{"👍", "💩", "🤡", "💯", "🤣"}
-	}
+	c.Log.applyDefaults()
+	c.OpenAI.applyDefaults()
+	c.Memes.applyDefaults()
 
-	subreddits := make([]string, 0, len(c.MemeSubreddits))
-	for _, sub := range c.MemeSubreddits {
-		v := strings.ToLower(strings.TrimSpace(sub))
-		if v != "" {
-			subreddits = append(subreddits, v)
-		}
-	}
-	if len(subreddits) == 0 {
-		subreddits = []string{"memes", "dankmemes", "me_irl"}
-	}
-	c.MemeSubreddits = subreddits
+	setDefaultNum(&c.DailyMessageInterval, 24*time.Hour)
+	setDefaultStr(&c.DBPath, "data/conversations.db")
 
-	cleaned := make([]string, 0, len(c.StickerFileIDs))
+	cleanedStickers := make([]string, 0, len(c.StickerFileIDs))
 	for _, id := range c.StickerFileIDs {
-		v := strings.TrimSpace(id)
-		if v != "" {
-			cleaned = append(cleaned, v)
+		if v := strings.TrimSpace(id); v != "" {
+			cleanedStickers = append(cleanedStickers, v)
 		}
 	}
-	c.StickerFileIDs = cleaned
+	c.StickerFileIDs = cleanedStickers
 
-	reactions := make([]string, 0, len(c.Reactions))
+	cleanedReactions := make([]string, 0, len(c.Reactions))
 	for _, r := range c.Reactions {
-		v := strings.TrimSpace(r)
-		if v != "" {
-			reactions = append(reactions, v)
+		if v := strings.TrimSpace(r); v != "" {
+			cleanedReactions = append(cleanedReactions, v)
 		}
 	}
-	c.Reactions = reactions
+	c.Reactions = cleanedReactions
 }
 
 func (c Bot) validate() error {
-	if strings.TrimSpace(c.LogFilePath) == "" {
-		return fmt.Errorf("log_file_path is required")
+	if err := c.Log.validate(); err != nil {
+		return err
 	}
-	if c.LogMaxSizeMB <= 0 {
-		return fmt.Errorf("log_max_size_mb must be > 0")
+	if err := c.Memes.validate(); err != nil {
+		return err
 	}
-	if c.LogMaxBackups <= 0 {
-		return fmt.Errorf("log_max_backups must be > 0")
-	}
-	if c.LogMaxAgeDays <= 0 {
-		return fmt.Errorf("log_max_age_days must be > 0")
-	}
+
 	if c.RandomReplyChance < 0 || c.RandomReplyChance > 1 {
 		return fmt.Errorf("bot_random_reply_chance must be between 0 and 1")
 	}
@@ -238,17 +167,9 @@ func (c Bot) validate() error {
 	if c.DailyMessageInterval <= 0 {
 		return fmt.Errorf("bot_daily_message_interval must be > 0")
 	}
-	if len(c.MemeSubreddits) == 0 {
-		return fmt.Errorf("bot_meme_subreddits must contain at least one subreddit name")
+	if strings.TrimSpace(c.DBPath) == "" {
+		return fmt.Errorf("conversation_db_path is required")
 	}
-	if c.MemeIntervalMin <= 0 {
-		return fmt.Errorf("bot_meme_interval_min must be > 0")
-	}
-	if c.MemeIntervalMax <= 0 {
-		return fmt.Errorf("bot_meme_interval_max must be > 0")
-	}
-	if c.MemeIntervalMax < c.MemeIntervalMin {
-		return fmt.Errorf("bot_meme_interval_max must be >= bot_meme_interval_min")
-	}
+
 	return nil
 }

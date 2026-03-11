@@ -94,16 +94,20 @@ docker compose -f docker-compose.elk.yml down
   - `bot_random_sticker_chance`
   - `bot_tts_reply_chance` (default: `0.5`)
   - `bot_daily_message_interval` (default: `24h`)
+  - `conversation_db_path` (default: `data/conversations.db`)
   - `bot_meme_subreddits` (default: `["memes","dankmemes","me_irl"]`)
   - `bot_meme_interval_min` (default: `5h`)
   - `bot_meme_interval_max` (default: `6h`)
 
-## Behavior in Group Chats
+## Behavior
 
 - The bot listens to text messages in `group` and `supergroup` chats.
 - It responds with ChatGPT when tagged (for example, `@your_bot_username hello`).
 - It also responds when a user replies to a message sent by the bot.
 - It can also respond randomly to about 1 out of 10 regular group messages.
+- In private chats (`type=private`) it now responds to every incoming message and keeps a short rolling memory (about 20 turns) so conversations feel like ChatGPT.
+- In group chats the bot also keeps a short per-chat memory (about 20 recent turns it participated in) so follow-up mentions have context.
+- Each user can set a personal tone for replies with `/persona <instructions>` (or `!persona ...`); use `/persona show` to view it or `/persona clear` to reset.
 - Logs are written in JSON to `log_file_path` with rotation enabled.
 - Reply delay is automatically calculated from incoming message length.
 - If stickers are configured, it can randomly send a random sticker instead of text.

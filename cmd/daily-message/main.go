@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"telegram-bot/internal/config"
-	"telegram-bot/internal/openai"
+	"telegram-bot/internal/infra/openai"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -77,11 +77,11 @@ func main() {
 
 	oa := openai.NewClient(
 		runtimeCfg.OpenAIAPIKey,
-		botCfg.OpenAIModel,
-		botCfg.OpenAITTSModel,
-		botCfg.OpenAITTSVoice,
-		botCfg.OpenAITTSInstructions,
-		botCfg.OpenAISystemPrompt,
+		botCfg.OpenAI.Model,
+		botCfg.OpenAI.TTSModel,
+		botCfg.OpenAI.TTSVoice,
+		botCfg.OpenAI.TTSInstructions,
+		botCfg.OpenAI.SystemPrompt,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

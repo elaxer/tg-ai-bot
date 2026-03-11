@@ -22,12 +22,14 @@ type Client struct {
 }
 
 type ReplyInput struct {
-	MessageText       string
-	SenderID          int64
-	SenderUsername    string
-	SenderDisplayName string
-	ReplyContext      string
-	ImageURL          string
+	MessageText         string
+	SenderID            int64
+	SenderUsername      string
+	SenderDisplayName   string
+	ReplyContext        string
+	ImageURL            string
+	SenderPersona       string
+	ConversationContext string
 }
 
 func NewClient(apiKey, model, ttsModel, ttsVoice, ttsInstructions, systemPrompt string) *Client {
@@ -89,7 +91,8 @@ func (c *Client) GenerateSpeech(ctx context.Context, text string) ([]byte, error
 }
 
 func (c *Client) GenerateReply(ctx context.Context, in ReplyInput) (string, error) {
-	return c.generateWithContent(ctx, buildContentInput(in))
+	instructions := c.buildInstructions(in.SenderPersona)
+	return c.generateWithContent(ctx, buildContentInput(in), instructions)
 }
 
 func (c *Client) GeneratePromptReply(ctx context.Context, prompt string) (string, error) {
@@ -99,16 +102,20 @@ func (c *Client) GeneratePromptReply(ctx context.Context, prompt string) (string
 			"text": strings.TrimSpace(prompt),
 		},
 	}
-	return c.generateWithContent(ctx, content)
+	return c.generateWithContent(ctx, content, c.SystemPrompt)
 }
 
-func (c *Client) generateWithContent(ctx context.Context, content []map[string]any) (string, error) {
+func (c *Client) generateWithContent(ctx context.Context, content []map[string]any, instructions string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
+	if strings.TrimSpace(instructions) == "" {
+		instructions = c.SystemPrompt
+	}
+
 	reqBody := map[string]any{
 		"model":        c.Model,
-		"instructions": c.SystemPrompt,
+		"instructions": instructions,
 		"input": []map[string]any{
 			{
 				"role":    "user",
@@ -195,8 +202,28 @@ func buildContextPrompt(in ReplyInput) string {
 	if in.ReplyContext != "" {
 		contextPrompt += "Replied message context:\n" + in.ReplyContext + "\n"
 	}
+	if strings.TrimSpace(in.ConversationContext) != "" {
+		contextPrompt += "Recent conversation history:\n" + strings.TrimSpace(in.ConversationContext) + "\n"
+	}
 	contextPrompt += "Current message:\n" + in.MessageText
 	return contextPrompt
+}
+
+const (
+	fallbackSystemPrompt    = "You are a helpful, concise assistant."
+	messageFormatGuidelines = "Format your reply like a casual Telegram message and keep it short. You can't code and can't write long texts"
+)
+
+func (c *Client) buildInstructions(persona string) string {
+	persona = strings.TrimSpace(persona)
+	if persona != "" {
+		return persona + "\n\n" + messageFormatGuidelines
+	}
+	base := strings.TrimSpace(c.SystemPrompt)
+	if base == "" {
+		base = fallbackSystemPrompt
+	}
+	return base + "\n\n" + messageFormatGuidelines
 }
 
 func buildContentInput(in ReplyInput) []map[string]any {
