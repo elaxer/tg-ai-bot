@@ -35,16 +35,6 @@ export BOT_CONFIG_PATH=./bot.config.yaml
 go run ./cmd/bot
 ```
 
-### Meme Sender Worker
-
-Send a random meme (image post) from a configurable list of subreddits to every known group chat roughly every 5–6 hours:
-
-```bash
-go run ./cmd/meme-sender
-```
-
-Flags include `-once` for a single cycle, `-dry-run` to log without sending, `-check-interval` to change the scan cadence, and `-known-chats` if you keep the chat list in a non-default location.
-
 ## ELK Log Viewer (Docker Compose)
 
 Use the bundled ELK stack to view bot logs in Kibana.
@@ -91,10 +81,10 @@ docker compose -f docker-compose.elk.yml down
   - `openai_model` (default: `gpt-4.1-mini`)
   - `openai_tts_model` (default: `gpt-4o-mini-tts`)
   - `openai_tts_voice` (default: `alloy`)
-  - `openai_tts_instructions` (default: `Speak with a natural England (British English) accent.`)
+  - `openai_tts_instructions`
   - `openai_system_prompt` (default: built-in friendly prompt)
   - `bot_random_reply_chance`
-  - `bot_reaction_chance` (default: `0.2`)
+  - `bot_reaction_chance`
   - `bot_reactions` (default: `["👍","💩","🤡","💯","🤣"]`)
   - `bot_sticker_file_ids`
   - `bot_random_sticker_chance`

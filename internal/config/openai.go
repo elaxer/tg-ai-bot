@@ -13,5 +13,4 @@ func (c *OpenAIConfig) applyDefaults() {
 	setDefaultStr(&c.TTSModel, "gpt-4o-mini-tts")
 	setDefaultStr(&c.SystemPrompt, defaultSystemPrompt)
 	setDefaultStr(&c.TTSVoice, "alloy")
-	setDefaultStr(&c.TTSInstructions, "Speak with a natural England (British English) accent.")
 }

@@ -213,7 +213,7 @@ func (s *Store) Persona(ctx context.Context, userID int64) (string, error) {
 	if s == nil {
 		return "", errNilHistoryStore
 	}
-	var persona string
+	var persona sql.NullString
 	err := s.db.QueryRowContext(ctx, personaQuery, userID).Scan(&persona)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -223,7 +223,7 @@ func (s *Store) Persona(ctx context.Context, userID int64) (string, error) {
 		return "", fmt.Errorf("get persona: %w", err)
 	}
 
-	return persona, nil
+	return strings.TrimSpace(persona.String), nil
 }
 
 // ClearPersona removes any stored persona for the user.

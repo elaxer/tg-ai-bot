@@ -39,7 +39,6 @@ type Bot struct {
 	Debug               bool         `yaml:"bot_debug"`
 	Log                 LogConfig    `yaml:",inline"`
 	OpenAI              OpenAIConfig `yaml:",inline"`
-	Memes               MemeConfig   `yaml:",inline"`
 	Reactions           []string     `yaml:"bot_reactions"`
 	ReactionChance      float64      `yaml:"bot_reaction_chance"`
 	RandomReplyChance   float64      `yaml:"bot_random_reply_chance"`
@@ -172,7 +171,6 @@ func setDefaultStr(ptr *string, defaultVal string) {
 func (c *Bot) applyDefaults() {
 	c.Log.applyDefaults()
 	c.OpenAI.applyDefaults()
-	c.Memes.applyDefaults()
 
 	setDefaultStr(&c.DBPath, "data/conversations.db")
 
@@ -195,9 +193,6 @@ func (c *Bot) applyDefaults() {
 
 func (c *Bot) validate() error {
 	if err := c.Log.validate(); err != nil {
-		return err
-	}
-	if err := c.Memes.validate(); err != nil {
 		return err
 	}
 
