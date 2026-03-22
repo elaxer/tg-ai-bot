@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"telegram-bot/internal/logging"
+	"github.com/elaxer/tg-ai-bot/internal/logging"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

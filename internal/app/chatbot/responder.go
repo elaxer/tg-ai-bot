@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"telegram-bot/internal/infra/openai"
+	"github.com/elaxer/tg-ai-bot/internal/infra/openai"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

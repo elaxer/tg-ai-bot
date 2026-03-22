@@ -95,6 +95,26 @@ linters:
         - unused # Identifies interfaces that are not used anywhere in the same package where the interface is defined.
         - opaque # Identifies functions that return interfaces, but the actual returned value is always a single concrete implementation.
         - unexported # Identifies interfaces that are not exported but are used in exported functions or methods.
+    unused:
+      # Mark all struct fields that have been written to as used.
+      # Default: true
+      field-writes-are-uses: false
+      # Treat IncDec statement (e.g. `i++` or `i--`) as both read and write operation instead of just write.
+      # Default: false
+      post-statements-are-reads: true
+      # Mark all exported fields as used.
+      # default: true
+      exported-fields-are-used: false
+      # Mark all function parameters as used.
+      # default: true
+      parameters-are-used: false
+      # Mark all local variables as used.
+      # default: true
+      local-variables-are-used: false
+      # Mark all identifiers inside generated files as used.
+      # Default: true
+      generated-is-used: false
+    
 formatters:
   enable:
     - gofmt

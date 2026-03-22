@@ -32,23 +32,21 @@ var (
 	errMissingReactions        = errors.New("bot_reactions must contain at least one reaction")
 	errInvalidStickerChance    = errors.New("bot_random_sticker_chance must be between 0 and 1")
 	errInvalidTTSReplyChance   = errors.New("bot_tts_reply_chance must be between 0 and 1")
-	errInvalidDailyInterval    = errors.New("bot_daily_message_interval must be > 0")
 	errMissingConversationDB   = errors.New("conversation_db_path is required")
 )
 
 type Bot struct {
-	Debug                bool          `yaml:"bot_debug"`
-	Log                  LogConfig     `yaml:",inline"`
-	OpenAI               OpenAIConfig  `yaml:",inline"`
-	Memes                MemeConfig    `yaml:",inline"`
-	Reactions            []string      `yaml:"bot_reactions"`
-	ReactionChance       float64       `yaml:"bot_reaction_chance"`
-	RandomReplyChance    float64       `yaml:"bot_random_reply_chance"`
-	StickerFileIDs       []string      `yaml:"bot_sticker_file_ids"`
-	RandomStickerChance  float64       `yaml:"bot_random_sticker_chance"`
-	TTSReplyChance       float64       `yaml:"bot_tts_reply_chance"`
-	DailyMessageInterval time.Duration `yaml:"bot_daily_message_interval"`
-	DBPath               string        `yaml:"conversation_db_path"`
+	Debug               bool         `yaml:"bot_debug"`
+	Log                 LogConfig    `yaml:",inline"`
+	OpenAI              OpenAIConfig `yaml:",inline"`
+	Memes               MemeConfig   `yaml:",inline"`
+	Reactions           []string     `yaml:"bot_reactions"`
+	ReactionChance      float64      `yaml:"bot_reaction_chance"`
+	RandomReplyChance   float64      `yaml:"bot_random_reply_chance"`
+	StickerFileIDs      []string     `yaml:"bot_sticker_file_ids"`
+	RandomStickerChance float64      `yaml:"bot_random_sticker_chance"`
+	TTSReplyChance      float64      `yaml:"bot_tts_reply_chance"`
+	DBPath              string       `yaml:"conversation_db_path"`
 }
 
 func LoadBot(path string) (Bot, error) {
@@ -176,7 +174,6 @@ func (c *Bot) applyDefaults() {
 	c.OpenAI.applyDefaults()
 	c.Memes.applyDefaults()
 
-	setDefaultNum(&c.DailyMessageInterval, 24*time.Hour)
 	setDefaultStr(&c.DBPath, "data/conversations.db")
 
 	cleanedStickers := make([]string, 0, len(c.StickerFileIDs))
@@ -217,7 +214,6 @@ func validateBotRanges(c *Bot) error {
 		{valid: len(c.Reactions) > 0, err: errMissingReactions},
 		{valid: c.RandomStickerChance >= 0 && c.RandomStickerChance <= 1, err: errInvalidStickerChance},
 		{valid: c.TTSReplyChance >= 0 && c.TTSReplyChance <= 1, err: errInvalidTTSReplyChance},
-		{valid: c.DailyMessageInterval > 0, err: errInvalidDailyInterval},
 		{valid: strings.TrimSpace(c.DBPath) != "", err: errMissingConversationDB},
 	}
 	for _, check := range checks {

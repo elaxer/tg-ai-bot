@@ -93,11 +93,7 @@ docker compose -f docker-compose.elk.yml down
   - `bot_sticker_file_ids`
   - `bot_random_sticker_chance`
   - `bot_tts_reply_chance` (default: `0.5`)
-  - `bot_daily_message_interval` (default: `24h`)
   - `conversation_db_path` (default: `data/conversations.db`)
-  - `bot_meme_subreddits` (default: `["memes","dankmemes","me_irl"]`)
-  - `bot_meme_interval_min` (default: `5h`)
-  - `bot_meme_interval_max` (default: `6h`)
 
 ## Behavior
 

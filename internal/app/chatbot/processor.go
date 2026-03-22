@@ -4,9 +4,9 @@ import (
 	"math/rand"
 	"strings"
 
-	"telegram-bot/internal/config"
-	"telegram-bot/internal/infra/openai"
-	"telegram-bot/internal/storage/history"
+	"github.com/elaxer/tg-ai-bot/internal/config"
+	"github.com/elaxer/tg-ai-bot/internal/infra/openai"
+	"github.com/elaxer/tg-ai-bot/internal/storage/history"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -27,10 +27,8 @@ func NewProcessor(
 		openai:    openaiClient,
 		rng:       rng,
 		reactions: append([]string(nil), cfg.Reactions...),
-		chats:     make(map[int64]chatDailyState),
 		history:   historyStore,
 	}
-	p.loadDailyState()
 
 	return p
 }
@@ -53,9 +51,6 @@ func (p *Processor) processIncomingMessage(msg *tgbotapi.Message) {
 	}
 
 	isPrivate := msg.Chat.Type == chatTypePrivate
-	if !isPrivate {
-		p.touchChat(msg.Chat.ID, chatName(msg.Chat))
-	}
 
 	traceID := newTraceID(msg.Chat.ID, msg.MessageID)
 	p.maybeReactToMessage(msg, traceID)

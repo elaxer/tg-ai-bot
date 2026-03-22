@@ -25,19 +25,9 @@ bot_random_sticker_chance: 0.2
 # 0.5 means 50% of generated text replies will be sent as voice.
 bot_tts_reply_chance: 0.5
 
-# Interval between proactive messages per chat (duration format, e.g. 24h, 12h, 90m).
-bot_daily_message_interval: 24h
-
 # Path to SQLite database for conversation history.
 conversation_db_path: "data/conversations.db"
 
-# Meme sender configuration.
-bot_meme_subreddits: ["memes", "dankmemes", "me_irl"]
-bot_meme_interval_min: 5h
-bot_meme_interval_max: 6h
-
-
 # Telegram sticker file_id list.
 bot_sticker_file_ids:
-  - "CAACAgIAAxkBAAEWVURprAHinH6_j3YfuBFsrhBM5_-FOAACoQoAAkPzkEsBtfl0U9zjOjoE"
   - "CAACAgIAAxkBAAEWVUZprAIAAVWnawLw962QrNFWMxmtPVoAAlUAA10ifRaIbT7yOfK-FjoE"

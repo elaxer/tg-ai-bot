@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"telegram-bot/internal/app/chatbot"
-	"telegram-bot/internal/config"
-	"telegram-bot/internal/infra/openai"
-	"telegram-bot/internal/logging"
-	"telegram-bot/internal/storage/history"
+	"github.com/elaxer/tg-ai-bot/internal/app/chatbot"
+	"github.com/elaxer/tg-ai-bot/internal/config"
+	"github.com/elaxer/tg-ai-bot/internal/infra/openai"
+	"github.com/elaxer/tg-ai-bot/internal/logging"
+	"github.com/elaxer/tg-ai-bot/internal/storage/history"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
