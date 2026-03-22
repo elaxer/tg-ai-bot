@@ -15,22 +15,6 @@ import (
 )
 
 const (
-	createHistoryTableQuery = `CREATE TABLE IF NOT EXISTS conversation_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        text TEXT NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );`
-	createHistoryIndexQuery = "" +
-		`CREATE INDEX IF NOT EXISTS idx_conversation_history_chat_id ` +
-		`ON conversation_history(chat_id, id);`
-	createPersonaTableQuery = `CREATE TABLE IF NOT EXISTS user_personas (
-        user_id INTEGER PRIMARY KEY,
-        user_name TEXT,
-        persona TEXT,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );`
 	insertHistoryQuery = `INSERT INTO conversation_history (chat_id, role, text) VALUES (?, ?, ?)`
 	trimHistoryQuery   = `DELETE FROM conversation_history WHERE chat_id = ? AND id NOT IN (
         SELECT id FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?
@@ -82,7 +66,7 @@ func Open(path string, maxPerChat int) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	if err := initDB(db); err != nil {
+	if err := configureDB(db); err != nil {
 		closeDB(db)
 
 		return nil, err
@@ -91,33 +75,17 @@ func Open(path string, maxPerChat int) (*Store, error) {
 	return &Store{db: db, maxPerChat: maxPerChat}, nil
 }
 
-func initDB(db *sql.DB) error {
+func configureDB(db *sql.DB) error {
 	steps := []struct {
 		query string
 		label string
 	}{
 		{query: `PRAGMA journal_mode=WAL;`, label: "set journal_mode"},
 		{query: `PRAGMA synchronous=NORMAL;`, label: "set synchronous"},
-		{query: createHistoryTableQuery, label: "create conversation_history"},
-		{query: createHistoryIndexQuery, label: "create index"},
-		{query: createPersonaTableQuery, label: "create user_personas"},
 	}
 	for _, step := range steps {
 		if _, err := db.Exec(step.query); err != nil {
 			return fmt.Errorf("%s: %w", step.label, err)
-		}
-	}
-	if err := addUserNameColumn(db); err != nil {
-		return err
-	}
-
-	return migratePersonaNotNull(db)
-}
-
-func addUserNameColumn(db *sql.DB) error {
-	if _, err := db.Exec(`ALTER TABLE user_personas ADD COLUMN user_name TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return fmt.Errorf("alter user_personas add user_name: %w", err)
 		}
 	}
 
@@ -270,80 +238,6 @@ func (s *Store) ClearPersona(ctx context.Context, userID int64) error {
 	}
 
 	return nil
-}
-
-func migratePersonaNotNull(db *sql.DB) error {
-	hasPersona, personaNotNull, err := personaColumnState(db)
-	if err != nil {
-		return err
-	}
-	if !hasPersona {
-		return nil
-	}
-	if !personaNotNull {
-		return nil
-	}
-
-	return rebuildPersonaTable(db)
-}
-
-func personaColumnState(db *sql.DB) (bool, bool, error) {
-	rows, err := db.Query(`PRAGMA table_info(user_personas);`)
-	if err != nil {
-		return false, false, fmt.Errorf("pragma table_info user_personas: %w", err)
-	}
-	defer closeRows(rows)
-
-	hasPersona := false
-	personaNotNull := false
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return false, false, fmt.Errorf("scan table_info: %w", err)
-		}
-		if name == "persona" {
-			hasPersona = true
-			personaNotNull = notnull == 1
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, false, fmt.Errorf("table_info rows error: %w", err)
-	}
-
-	return hasPersona, personaNotNull, nil
-}
-
-func rebuildPersonaTable(db *sql.DB) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin persona migration: %w", err)
-	}
-	defer rollbackTx(tx)
-
-	createNew := `CREATE TABLE user_personas_new (
-        user_id INTEGER PRIMARY KEY,
-        user_name TEXT,
-        persona TEXT,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );`
-	if _, err := tx.Exec(createNew); err != nil {
-		return fmt.Errorf("create user_personas_new: %w", err)
-	}
-	if _, err := tx.Exec(`INSERT INTO user_personas_new (user_id, user_name, persona, updated_at)
-        SELECT user_id, user_name, persona, updated_at FROM user_personas`); err != nil {
-		return fmt.Errorf("copy user_personas: %w", err)
-	}
-	if _, err := tx.Exec(`DROP TABLE user_personas`); err != nil {
-		return fmt.Errorf("drop old user_personas: %w", err)
-	}
-	if _, err := tx.Exec(`ALTER TABLE user_personas_new RENAME TO user_personas`); err != nil {
-		return fmt.Errorf("rename user_personas_new: %w", err)
-	}
-
-	return tx.Commit()
 }
 
 func rollbackTx(tx *sql.Tx) {

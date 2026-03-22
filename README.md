@@ -17,6 +17,12 @@ cp bot.config.example.yaml bot.config.yaml
 # fill bot.config.yaml with bot settings (models, logging, behavior)
 ```
 
+Apply database migrations before starting the bot:
+
+```bash
+migrate -path ./migrations -database "sqlite3://data/conversations.db" up
+```
+
 Optional custom config path:
 
 ```bash
@@ -94,6 +100,7 @@ docker compose -f docker-compose.elk.yml down
   - `bot_random_sticker_chance`
   - `bot_tts_reply_chance` (default: `0.5`)
   - `conversation_db_path` (default: `data/conversations.db`)
+- Database schema migrations live in `migrations/` and are applied externally with the `migrate` CLI.
 
 ## Behavior
 
