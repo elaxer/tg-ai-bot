@@ -25,6 +25,7 @@ func (p *Processor) getChatHistoryContext(chatID int64) string {
 	turns, err := p.history.Recent(context.Background(), chatID, chatHistoryMaxTurns)
 	if err != nil {
 		logError("load chat history failed", "chat_id", chatID, "err", err)
+
 		return ""
 	}
 	if len(turns) == 0 {
@@ -37,6 +38,7 @@ func (p *Processor) getChatHistoryContext(chatID int64) string {
 		builder.WriteString(turn.Text)
 		builder.WriteByte('\n')
 	}
+
 	return strings.TrimSpace(builder.String())
 }
 
@@ -55,6 +57,7 @@ func (p *Processor) ensureUserRecord(user *tgbotapi.User) {
 
 func formatUserTurn(info SenderInfo, text string) string {
 	label := getUserLabel(info)
+
 	return fmt.Sprintf("%s: %s", label, strings.TrimSpace(text))
 }
 
@@ -68,5 +71,6 @@ func getUserLabel(info SenderInfo) string {
 	if info.ID != 0 {
 		return fmt.Sprintf("user#%d", info.ID)
 	}
+
 	return "user"
 }

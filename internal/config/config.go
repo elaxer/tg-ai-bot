@@ -1,9 +1,12 @@
+// Package config loads bot configuration from files and environment variables.
 package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,7 +14,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultSystemPrompt = "You are a friendly, informal chat companion in a Telegram group. Respond naturally, briefly, and like a regular friend. Avoid sounding formal, robotic, or like customer support."
+const (
+	defaultSystemPrompt = "You are a friendly, informal chat companion in a Telegram group. " +
+		"Respond naturally, briefly, and like a regular friend. " +
+		"Avoid sounding formal, robotic, or like customer support."
+	//nolint:gosec // Environment variable names are not credentials.
+	envTelegramBotToken = "TELEGRAM_BOT_TOKEN"
+	//nolint:gosec // Environment variable names are not credentials.
+	envOpenAIAPIKey = "OPENAI_API_KEY"
+)
+
+var (
+	errMissingTelegramBotToken = errors.New("missing required env: TELEGRAM_BOT_TOKEN")
+	errMissingOpenAIAPIKey     = errors.New("missing required env: OPENAI_API_KEY")
+	errInvalidReplyChance      = errors.New("bot_random_reply_chance must be between 0 and 1")
+	errInvalidReactionChance   = errors.New("bot_reaction_chance must be between 0 and 1")
+	errMissingReactions        = errors.New("bot_reactions must contain at least one reaction")
+	errInvalidStickerChance    = errors.New("bot_random_sticker_chance must be between 0 and 1")
+	errInvalidTTSReplyChance   = errors.New("bot_tts_reply_chance must be between 0 and 1")
+	errInvalidDailyInterval    = errors.New("bot_daily_message_interval must be > 0")
+	errMissingConversationDB   = errors.New("conversation_db_path is required")
+)
 
 type Bot struct {
 	Debug                bool          `yaml:"bot_debug"`
@@ -31,7 +54,9 @@ type Bot struct {
 func LoadBot(path string) (Bot, error) {
 	var cfg Bot
 
-	b, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 -- config path is intentionally configurable.
+	b, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return cfg, fmt.Errorf("read file: %w", err)
 	}
@@ -43,18 +68,20 @@ func LoadBot(path string) (Bot, error) {
 	if err := cfg.validate(); err != nil {
 		return cfg, err
 	}
+
 	return cfg, nil
 }
 
 func LoadRuntimeFromEnv() (Runtime, error) {
-	token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+	token := strings.TrimSpace(os.Getenv(envTelegramBotToken))
 	if token == "" {
-		return Runtime{}, fmt.Errorf("missing required env: TELEGRAM_BOT_TOKEN")
+		return Runtime{}, errMissingTelegramBotToken
 	}
-	openAIAPIKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	openAIAPIKey := strings.TrimSpace(os.Getenv(envOpenAIAPIKey))
 	if openAIAPIKey == "" {
-		return Runtime{}, fmt.Errorf("missing required env: OPENAI_API_KEY")
+		return Runtime{}, errMissingOpenAIAPIKey
 	}
+
 	return Runtime{
 		TelegramToken: token,
 		OpenAIAPIKey:  openAIAPIKey,
@@ -62,47 +89,74 @@ func LoadRuntimeFromEnv() (Runtime, error) {
 }
 
 func LoadDotEnv(path string) error {
-	f, err := os.Open(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 -- dotenv path is intentionally configurable.
+	f, err := os.Open(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
+
 		return fmt.Errorf("open dotenv: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
+		key, value, ok := parseDotEnvLine(scanner.Text())
 		if !ok {
 			continue
 		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		if len(value) >= 2 {
-			if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
-				value = value[1 : len(value)-1]
-			}
-		}
-		// Keep explicit environment variables as highest priority.
-		if _, exists := os.LookupEnv(key); exists {
-			continue
-		}
-		if err := os.Setenv(key, value); err != nil {
+
+		if err := setDefaultEnv(key, value); err != nil {
 			return fmt.Errorf("set env %s: %w", key, err)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read dotenv: %w", err)
 	}
+
 	return nil
+}
+
+func parseDotEnvLine(raw string) (string, string, bool) {
+	line := strings.TrimSpace(raw)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+
+	key, value, ok := strings.Cut(line, "=")
+	if !ok {
+		return "", "", false
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", "", false
+	}
+
+	return key, trimOptionalQuotes(strings.TrimSpace(value)), true
+}
+
+func trimOptionalQuotes(value string) string {
+	if len(value) < 2 {
+		return value
+	}
+	if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+		return value[1 : len(value)-1]
+	}
+
+	return value
+}
+
+func setDefaultEnv(key, value string) error {
+	// Keep explicit environment variables as highest priority.
+	if _, exists := os.LookupEnv(key); exists {
+		return nil
+	}
+
+	return os.Setenv(key, value)
 }
 
 func setDefaultNum[T constraints.Integer | constraints.Float | time.Duration](ptr *T, defaultVal T) {
@@ -110,6 +164,7 @@ func setDefaultNum[T constraints.Integer | constraints.Float | time.Duration](pt
 		*ptr = defaultVal
 	}
 }
+
 func setDefaultStr(ptr *string, defaultVal string) {
 	if strings.TrimSpace(*ptr) == "" {
 		*ptr = defaultVal
@@ -141,7 +196,7 @@ func (c *Bot) applyDefaults() {
 	c.Reactions = cleanedReactions
 }
 
-func (c Bot) validate() error {
+func (c *Bot) validate() error {
 	if err := c.Log.validate(); err != nil {
 		return err
 	}
@@ -149,26 +204,26 @@ func (c Bot) validate() error {
 		return err
 	}
 
-	if c.RandomReplyChance < 0 || c.RandomReplyChance > 1 {
-		return fmt.Errorf("bot_random_reply_chance must be between 0 and 1")
+	return validateBotRanges(c)
+}
+
+func validateBotRanges(c *Bot) error {
+	checks := []struct {
+		valid bool
+		err   error
+	}{
+		{valid: c.RandomReplyChance >= 0 && c.RandomReplyChance <= 1, err: errInvalidReplyChance},
+		{valid: c.ReactionChance >= 0 && c.ReactionChance <= 1, err: errInvalidReactionChance},
+		{valid: len(c.Reactions) > 0, err: errMissingReactions},
+		{valid: c.RandomStickerChance >= 0 && c.RandomStickerChance <= 1, err: errInvalidStickerChance},
+		{valid: c.TTSReplyChance >= 0 && c.TTSReplyChance <= 1, err: errInvalidTTSReplyChance},
+		{valid: c.DailyMessageInterval > 0, err: errInvalidDailyInterval},
+		{valid: strings.TrimSpace(c.DBPath) != "", err: errMissingConversationDB},
 	}
-	if c.ReactionChance < 0 || c.ReactionChance > 1 {
-		return fmt.Errorf("bot_reaction_chance must be between 0 and 1")
-	}
-	if len(c.Reactions) == 0 {
-		return fmt.Errorf("bot_reactions must contain at least one reaction")
-	}
-	if c.RandomStickerChance < 0 || c.RandomStickerChance > 1 {
-		return fmt.Errorf("bot_random_sticker_chance must be between 0 and 1")
-	}
-	if c.TTSReplyChance < 0 || c.TTSReplyChance > 1 {
-		return fmt.Errorf("bot_tts_reply_chance must be between 0 and 1")
-	}
-	if c.DailyMessageInterval <= 0 {
-		return fmt.Errorf("bot_daily_message_interval must be > 0")
-	}
-	if strings.TrimSpace(c.DBPath) == "" {
-		return fmt.Errorf("conversation_db_path is required")
+	for _, check := range checks {
+		if !check.valid {
+			return check.err
+		}
 	}
 
 	return nil

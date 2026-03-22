@@ -1,9 +1,15 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"time"
+)
+
+var (
+	errInvalidMemeIntervalMin = errors.New("bot_meme_interval_min must be > 0")
+	errInvalidMemeIntervalMax = errors.New("bot_meme_interval_max must be > 0")
+	errInvalidMemeIntervalOrd = errors.New("bot_meme_interval_max must be >= bot_meme_interval_min")
 )
 
 type MemeConfig struct {
@@ -28,13 +34,14 @@ func (c *MemeConfig) applyDefaults() {
 
 func (c *MemeConfig) validate() error {
 	if c.IntervalMin <= 0 {
-		return fmt.Errorf("bot_meme_interval_min must be > 0")
+		return errInvalidMemeIntervalMin
 	}
 	if c.IntervalMax <= 0 {
-		return fmt.Errorf("bot_meme_interval_max must be > 0")
+		return errInvalidMemeIntervalMax
 	}
 	if c.IntervalMax < c.IntervalMin {
-		return fmt.Errorf("bot_meme_interval_max must be >= bot_meme_interval_min")
+		return errInvalidMemeIntervalOrd
 	}
+
 	return nil
 }

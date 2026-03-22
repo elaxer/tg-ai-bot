@@ -10,6 +10,8 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+const unknownValue = "unknown"
+
 func chatName(chat *tgbotapi.Chat) string {
 	if chat == nil {
 		return ""
@@ -20,6 +22,7 @@ func chatName(chat *tgbotapi.Chat) string {
 	if strings.TrimSpace(chat.UserName) != "" {
 		return "@" + chat.UserName
 	}
+
 	return ""
 }
 
@@ -27,23 +30,11 @@ func newTraceID(chatID int64, msgID int) string {
 	return fmt.Sprintf("%d-%d-%d", time.Now().UnixNano(), chatID, msgID)
 }
 
-func userLoginForLog(sender SenderInfo) string {
-	if strings.TrimSpace(sender.Username) != "" {
-		return "@" + strings.TrimSpace(sender.Username)
-	}
-	if strings.TrimSpace(sender.DisplayName) != "" {
-		return strings.TrimSpace(sender.DisplayName)
-	}
-	if sender.ID != 0 {
-		return fmt.Sprintf("id:%d", sender.ID)
-	}
-	return "unknown"
-}
-
 func shorten(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
+
 	return s[:max] + "..."
 }
 
@@ -62,6 +53,7 @@ func getMessageText(msg *tgbotapi.Message) string {
 	if strings.TrimSpace(msg.Text) != "" {
 		return msg.Text
 	}
+
 	return msg.Caption
 }
 
@@ -69,6 +61,7 @@ func extractBestPhotoFileID(msg *tgbotapi.Message) string {
 	if len(msg.Photo) == 0 {
 		return ""
 	}
+
 	return msg.Photo[len(msg.Photo)-1].FileID
 }
 
@@ -76,6 +69,7 @@ func extractSenderInfo(msg *tgbotapi.Message) SenderInfo {
 	if msg == nil || msg.From == nil {
 		return SenderInfo{}
 	}
+
 	return SenderInfo{
 		ID:          msg.From.ID,
 		Username:    strings.TrimSpace(msg.From.UserName),
@@ -87,6 +81,7 @@ func extractPromptText(text, botTag string, tagged bool) string {
 	if tagged {
 		text = strings.TrimSpace(strings.ReplaceAll(text, botTag, ""))
 	}
+
 	return strings.TrimSpace(text)
 }
 
@@ -100,11 +95,11 @@ func buildReplyContext(msg *tgbotapi.Message) string {
 	}
 
 	sender := extractSenderInfo(msg)
-	replyHandle := "unknown"
+	replyHandle := unknownValue
 	if sender.Username != "" {
 		replyHandle = "@" + sender.Username
 	}
-	replyDisplayName := "unknown"
+	replyDisplayName := unknownValue
 	if sender.DisplayName != "" {
 		replyDisplayName = sender.DisplayName
 	}
@@ -121,5 +116,6 @@ func buildReplyContext(msg *tgbotapi.Message) string {
 func delayFromMessageLength(message string) time.Duration {
 	length := len([]rune(strings.TrimSpace(message)))
 	ms := 300 + (length * 45)
+
 	return time.Duration(ms) * time.Millisecond
 }

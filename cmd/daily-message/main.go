@@ -36,29 +36,23 @@ type dailyStateFile struct {
 	Chats map[string]chatDailyState `json:"chats"`
 }
 
-func main() {
-	var (
-		configPath    string
-		statePath     string
-		minInterval   time.Duration
-		checkInterval time.Duration
-		dryRun        bool
-		once          bool
-	)
+type cliConfig struct {
+	configPath    string
+	statePath     string
+	minInterval   time.Duration
+	checkInterval time.Duration
+	dryRun        bool
+	once          bool
+}
 
-	flag.StringVar(&configPath, "config", defaultConfigPath, "path to bot config yaml")
-	flag.StringVar(&statePath, "state", defaultStatePath, "path to daily state json")
-	flag.DurationVar(&minInterval, "min-interval", 0, "minimum time between daily messages per chat (overrides bot_daily_message_interval)")
-	flag.DurationVar(&checkInterval, "check-interval", defaultCheckInterval, "how often to scan state for due chats")
-	flag.BoolVar(&dryRun, "dry-run", false, "print due chats without sending messages")
-	flag.BoolVar(&once, "once", false, "run a single scan/send cycle and exit")
-	flag.Parse()
+func main() {
+	cfg := parseFlags()
 
 	if err := config.LoadDotEnv(".env"); err != nil {
 		log.Fatalf("load .env: %v", err)
 	}
 
-	botCfg, err := config.LoadBot(configPath)
+	botCfg, err := config.LoadBot(cfg.configPath)
 	if err != nil {
 		log.Fatalf("load bot config: %v", err)
 	}
@@ -66,8 +60,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("load runtime env: %v", err)
 	}
-	if minInterval <= 0 {
-		minInterval = botCfg.DailyMessageInterval
+	if cfg.minInterval <= 0 {
+		cfg.minInterval = botCfg.DailyMessageInterval
 	}
 
 	tgBot, err := tgbotapi.NewBotAPI(runtimeCfg.TelegramToken)
@@ -85,69 +79,155 @@ func main() {
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
-	if once {
-		scanned, sent, err := runCycle(ctx, statePath, minInterval, dryRun, tgBot, oa)
-		if err != nil {
-			log.Fatalf("run cycle failed: %v", err)
+	if cfg.once {
+		if err := runOnce(ctx, cfg.statePath, cfg.minInterval, cfg.dryRun, tgBot, oa); err != nil {
+			log.Printf("run cycle failed: %v", err)
+			stop()
+
+			return
 		}
-		log.Printf("cycle done: due=%d sent=%d", scanned, sent)
+		stop()
+
 		return
 	}
 
-	if checkInterval <= 0 {
+	if cfg.checkInterval <= 0 {
 		log.Fatalf("check-interval must be > 0")
 	}
-	log.Printf("daily worker started: state=%s min-interval=%s check-interval=%s", statePath, minInterval, checkInterval)
+	log.Printf(
+		"daily worker started: state=%s min-interval=%s check-interval=%s",
+		cfg.statePath,
+		cfg.minInterval,
+		cfg.checkInterval,
+	)
 
 	tickCh := make(chan time.Time, 1)
 	sendCh := make(chan int64, 256)
 	doneCh := make(chan struct{})
 
-	go startTicker(ctx, checkInterval, tickCh)
-	go sendWorker(ctx, sendCh, doneCh, statePath, dryRun, tgBot, oa)
+	go startTicker(ctx, cfg.checkInterval, tickCh)
+	go sendWorker(ctx, sendCh, doneCh, cfg.statePath, cfg.dryRun, tgBot, oa)
 
 	tickCh <- time.Now()
+	runLoop(ctx, cfg.statePath, cfg.minInterval, tickCh, sendCh, doneCh)
+	stop()
+}
+
+func parseFlags() cliConfig {
+	cfg := cliConfig{}
+	flag.StringVar(&cfg.configPath, "config", defaultConfigPath, "path to bot config yaml")
+	flag.StringVar(&cfg.statePath, "state", defaultStatePath, "path to daily state json")
+	flag.DurationVar(
+		&cfg.minInterval,
+		"min-interval",
+		0,
+		"minimum time between daily messages per chat (overrides bot_daily_message_interval)",
+	)
+	flag.DurationVar(&cfg.checkInterval, "check-interval", defaultCheckInterval, "how often to scan state for due chats")
+	flag.BoolVar(&cfg.dryRun, "dry-run", false, "print due chats without sending messages")
+	flag.BoolVar(&cfg.once, "once", false, "run a single scan/send cycle and exit")
+	flag.Parse()
+
+	return cfg
+}
+
+func runLoop(
+	ctx context.Context,
+	statePath string,
+	minInterval time.Duration,
+	tickCh <-chan time.Time,
+	sendCh chan int64,
+	doneCh <-chan struct{},
+) {
 	for {
-		select {
-		case <-ctx.Done():
-			close(sendCh)
-			<-doneCh
-			log.Printf("daily worker stopped")
+		if runLoopOnce(ctx, statePath, minInterval, tickCh, sendCh, doneCh) {
 			return
-		case <-tickCh:
-			due, err := findDueChats(statePath, minInterval)
-			if err != nil {
-				log.Printf("scan failed: %v", err)
-				continue
-			}
-			if len(due) == 0 {
-				log.Printf("no due chats")
-				continue
-			}
-			log.Printf("due chats: %d", len(due))
-			for _, chatID := range due {
-				select {
-				case sendCh <- chatID:
-				case <-ctx.Done():
-					close(sendCh)
-					<-doneCh
-					log.Printf("daily worker stopped")
-					return
-				}
-			}
 		}
 	}
 }
 
-func runCycle(ctx context.Context, statePath string, minInterval time.Duration, dryRun bool, tgBot *tgbotapi.BotAPI, oa *openai.Client) (int, int, error) {
+func runLoopOnce(
+	ctx context.Context,
+	statePath string,
+	minInterval time.Duration,
+	tickCh <-chan time.Time,
+	sendCh chan int64,
+	doneCh <-chan struct{},
+) bool {
+	select {
+	case <-ctx.Done():
+		close(sendCh)
+		<-doneCh
+		log.Printf("daily worker stopped")
+
+		return true
+	case <-tickCh:
+		due, err := findDueChats(statePath, minInterval)
+		if err != nil {
+			log.Printf("scan failed: %v", err)
+
+			return false
+		}
+		if len(due) == 0 {
+			log.Printf("no due chats")
+
+			return false
+		}
+		log.Printf("due chats: %d", len(due))
+
+		return enqueueDueChats(ctx, due, sendCh, doneCh)
+	}
+}
+
+func enqueueDueChats(ctx context.Context, due []int64, sendCh chan int64, doneCh <-chan struct{}) bool {
+	for _, chatID := range due {
+		select {
+		case sendCh <- chatID:
+		case <-ctx.Done():
+			close(sendCh)
+			<-doneCh
+			log.Printf("daily worker stopped")
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func runOnce(
+	ctx context.Context,
+	statePath string,
+	minInterval time.Duration,
+	dryRun bool,
+	tgBot *tgbotapi.BotAPI,
+	oa *openai.Client,
+) error {
+	scanned, sent, err := runCycle(ctx, statePath, minInterval, dryRun, tgBot, oa)
+	if err != nil {
+		return err
+	}
+	log.Printf("cycle done: due=%d sent=%d", scanned, sent)
+
+	return nil
+}
+
+func runCycle(
+	ctx context.Context,
+	statePath string,
+	minInterval time.Duration,
+	dryRun bool,
+	tgBot *tgbotapi.BotAPI,
+	oa *openai.Client,
+) (int, int, error) {
 	due, err := findDueChats(statePath, minInterval)
 	if err != nil {
 		return 0, 0, err
 	}
 	if len(due) == 0 {
 		log.Printf("no due chats")
+
 		return 0, 0, nil
 	}
 	log.Printf("due chats: %d", len(due))
@@ -155,10 +235,12 @@ func runCycle(ctx context.Context, statePath string, minInterval time.Duration, 
 	for _, chatID := range due {
 		if err := sendToChat(ctx, statePath, chatID, dryRun, tgBot, oa); err != nil {
 			log.Printf("send failed chat_id=%d err=%v", chatID, err)
+
 			continue
 		}
 		sentCount++
 	}
+
 	return len(due), sentCount, nil
 }
 
@@ -179,7 +261,15 @@ func startTicker(ctx context.Context, interval time.Duration, tickCh chan<- time
 	}
 }
 
-func sendWorker(ctx context.Context, sendCh <-chan int64, doneCh chan<- struct{}, statePath string, dryRun bool, tgBot *tgbotapi.BotAPI, oa *openai.Client) {
+func sendWorker(
+	ctx context.Context,
+	sendCh <-chan int64,
+	doneCh chan<- struct{},
+	statePath string,
+	dryRun bool,
+	tgBot *tgbotapi.BotAPI,
+	oa *openai.Client,
+) {
 	defer close(doneCh)
 	for {
 		select {
@@ -191,6 +281,7 @@ func sendWorker(ctx context.Context, sendCh <-chan int64, doneCh chan<- struct{}
 			}
 			if err := sendToChat(ctx, statePath, chatID, dryRun, tgBot, oa); err != nil {
 				log.Printf("send failed chat_id=%d err=%v", chatID, err)
+
 			}
 		}
 	}
@@ -204,10 +295,18 @@ func findDueChats(statePath string, minInterval time.Duration) ([]int64, error) 
 	if len(state.Chats) == 0 {
 		return nil, nil
 	}
+
 	return dueChats(state, time.Now(), minInterval), nil
 }
 
-func sendToChat(parentCtx context.Context, statePath string, chatID int64, dryRun bool, tgBot *tgbotapi.BotAPI, oa *openai.Client) error {
+func sendToChat(
+	parentCtx context.Context,
+	statePath string,
+	chatID int64,
+	dryRun bool,
+	tgBot *tgbotapi.BotAPI,
+	oa *openai.Client,
+) error {
 	state, err := loadState(statePath)
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
@@ -249,6 +348,7 @@ func sendToChat(parentCtx context.Context, statePath string, chatID int64, dryRu
 		return fmt.Errorf("save state: %w", err)
 	}
 	log.Printf("sent daily message chat_id=%d msg_id=%d", sent.Chat.ID, sent.MessageID)
+
 	return nil
 }
 
@@ -264,6 +364,7 @@ func dueChats(state dailyStateFile, now time.Time, minInterval time.Duration) []
 			due = append(due, chatID)
 		}
 	}
+
 	return due
 }
 
@@ -272,6 +373,7 @@ func buildDailyPrompt(groupName string) string {
 	if groupName == "" {
 		groupName = "unknown"
 	}
+
 	return fmt.Sprintf(
 		"Write one short, fresh, standalone Telegram group message for group %q. "+
 			"Be casual, friendly, natural, and varied day-to-day. "+
@@ -281,21 +383,26 @@ func buildDailyPrompt(groupName string) string {
 }
 
 func loadState(path string) (dailyStateFile, error) {
-	b, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 -- state path is an explicit CLI/config input.
+	b, err := os.ReadFile(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return dailyStateFile{Chats: map[string]chatDailyState{}}, nil
 		}
+
 		return dailyStateFile{}, err
 	}
 
 	var state dailyStateFile
 	if err := json.Unmarshal(b, &state); err != nil {
+
 		return dailyStateFile{}, err
 	}
 	if state.Chats == nil {
 		state.Chats = map[string]chatDailyState{}
 	}
+
 	return state, nil
 }
 
@@ -307,10 +414,11 @@ func saveState(path string, state dailyStateFile) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+
+	return os.WriteFile(path, b, 0o600)
 }
 
 func chatName(chat *tgbotapi.Chat) string {
@@ -323,5 +431,6 @@ func chatName(chat *tgbotapi.Chat) string {
 	if strings.TrimSpace(chat.UserName) != "" {
 		return "@" + chat.UserName
 	}
+
 	return ""
 }

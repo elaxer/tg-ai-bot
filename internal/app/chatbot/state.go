@@ -40,12 +40,14 @@ func (p *Processor) loadDailyState() {
 		if !os.IsNotExist(err) {
 			logError("read daily state failed", "path", dailyStatePath, "err", err)
 		}
+
 		return
 	}
 
 	var parsed dailyStateFile
 	if err := json.Unmarshal(b, &parsed); err != nil {
 		logError("parse daily state failed", "err", err)
+
 		return
 	}
 
@@ -72,8 +74,9 @@ func (p *Processor) saveDailyState() error {
 		return fmt.Errorf("marshal daily state: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dailyStatePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dailyStatePath), 0o750); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
-	return os.WriteFile(dailyStatePath, b, 0o644)
+
+	return os.WriteFile(dailyStatePath, b, 0o600)
 }

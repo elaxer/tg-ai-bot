@@ -1,14 +1,30 @@
+// Package openai wraps the OpenAI APIs used by the bot.
 package openai
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+)
+
+const (
+	audioSpeechEndpoint     = "https://api.openai.com/v1/audio/speech"
+	responsesEndpoint       = "https://api.openai.com/v1/responses"
+	fallbackSystemPrompt    = "You are a helpful, concise assistant."
+	messageFormatGuidelines = "Format your reply like a casual Telegram message and keep it short. " +
+		"You can't code and can't write long texts"
+)
+
+var (
+	errMissingOutputText = errors.New("no output_text in response")
+	errSpeechAPIStatus   = errors.New("speech api status")
+	errAPIStatus         = errors.New("api status")
 )
 
 type Client struct {
@@ -62,7 +78,12 @@ func (c *Client) GenerateSpeech(ctx context.Context, text string) ([]byte, error
 		return nil, fmt.Errorf("marshal speech request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/audio/speech", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		audioSpeechEndpoint,
+		bytes.NewReader(payload),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("build speech request: %w", err)
 	}
@@ -78,20 +99,29 @@ func (c *Client) GenerateSpeech(ctx context.Context, text string) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("speech http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read speech response: %w", err)
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("speech api status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		return nil, fmt.Errorf(
+			"%w: code=%d body=%s",
+			errSpeechAPIStatus,
+			resp.StatusCode,
+			strings.TrimSpace(string(respBytes)),
+		)
 	}
+
 	return respBytes, nil
 }
 
 func (c *Client) GenerateReply(ctx context.Context, in ReplyInput) (string, error) {
 	instructions := c.buildInstructions(in.SenderPersona)
+
 	return c.generateWithContent(ctx, buildContentInput(in), instructions)
 }
 
@@ -102,35 +132,24 @@ func (c *Client) GeneratePromptReply(ctx context.Context, prompt string) (string
 			"text": strings.TrimSpace(prompt),
 		},
 	}
+
 	return c.generateWithContent(ctx, content, c.SystemPrompt)
 }
 
-func (c *Client) generateWithContent(ctx context.Context, content []map[string]any, instructions string) (string, error) {
+func (c *Client) generateWithContent(
+	ctx context.Context,
+	content []map[string]any,
+	instructions string,
+) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	if strings.TrimSpace(instructions) == "" {
-		instructions = c.SystemPrompt
-	}
-
-	reqBody := map[string]any{
-		"model":        c.Model,
-		"instructions": instructions,
-		"input": []map[string]any{
-			{
-				"role":    "user",
-				"content": content,
-			},
-		},
-		"max_output_tokens": 300,
-	}
-
-	payload, err := json.Marshal(reqBody)
+	payload, err := c.buildResponsePayload(content, instructions)
 	if err != nil {
-		return "", fmt.Errorf("marshal request: %w", err)
+		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/responses", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responsesEndpoint, bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
@@ -146,7 +165,9 @@ func (c *Client) generateWithContent(ctx context.Context, content []map[string]a
 	if err != nil {
 		return "", fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -154,9 +175,43 @@ func (c *Client) generateWithContent(ctx context.Context, content []map[string]a
 	}
 
 	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("api status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		return "", fmt.Errorf("%w: code=%d body=%s", errAPIStatus, resp.StatusCode, strings.TrimSpace(string(respBytes)))
 	}
 
+	return parseOutputText(respBytes)
+}
+
+func (c *Client) buildResponsePayload(content []map[string]any, instructions string) ([]byte, error) {
+	instructions = fallbackInstructions(instructions, c.SystemPrompt)
+	reqBody := map[string]any{
+		"model":        c.Model,
+		"instructions": instructions,
+		"input": []map[string]any{
+			{
+				"role":    "user",
+				"content": content,
+			},
+		},
+		"max_output_tokens": 300,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	return payload, nil
+}
+
+func fallbackInstructions(instructions, systemPrompt string) string {
+	if strings.TrimSpace(instructions) != "" {
+		return instructions
+	}
+
+	return systemPrompt
+}
+
+func parseOutputText(respBytes []byte) (string, error) {
 	var parsed struct {
 		Output []struct {
 			Type    string `json:"type"`
@@ -170,18 +225,33 @@ func (c *Client) generateWithContent(ctx context.Context, content []map[string]a
 		return "", fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	for _, item := range parsed.Output {
+	text := firstOutputText(parsed.Output)
+	if text != "" {
+		return text, nil
+	}
+
+	return "", errMissingOutputText
+}
+
+func firstOutputText(output []struct {
+	Type    string `json:"type"`
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+}) string {
+	for _, item := range output {
 		if item.Type != "message" {
 			continue
 		}
 		for _, content := range item.Content {
 			if content.Type == "output_text" && strings.TrimSpace(content.Text) != "" {
-				return strings.TrimSpace(content.Text), nil
+				return strings.TrimSpace(content.Text)
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no output_text in response")
+	return ""
 }
 
 func buildContextPrompt(in ReplyInput) string {
@@ -206,13 +276,9 @@ func buildContextPrompt(in ReplyInput) string {
 		contextPrompt += "Recent conversation history:\n" + strings.TrimSpace(in.ConversationContext) + "\n"
 	}
 	contextPrompt += "Current message:\n" + in.MessageText
+
 	return contextPrompt
 }
-
-const (
-	fallbackSystemPrompt    = "You are a helpful, concise assistant."
-	messageFormatGuidelines = "Format your reply like a casual Telegram message and keep it short. You can't code and can't write long texts"
-)
 
 func (c *Client) buildInstructions(persona string) string {
 	persona = strings.TrimSpace(persona)
@@ -223,6 +289,7 @@ func (c *Client) buildInstructions(persona string) string {
 	if base == "" {
 		base = fallbackSystemPrompt
 	}
+
 	return base + "\n\n" + messageFormatGuidelines
 }
 
@@ -239,5 +306,6 @@ func buildContentInput(in ReplyInput) []map[string]any {
 			"image_url": in.ImageURL,
 		})
 	}
+
 	return content
 }

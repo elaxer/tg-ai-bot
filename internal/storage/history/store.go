@@ -1,8 +1,10 @@
+// Package history persists chat history and personas in SQLite.
 package history
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +12,44 @@ import (
 	"sync"
 
 	_ "modernc.org/sqlite"
+)
+
+const (
+	createHistoryTableQuery = `CREATE TABLE IF NOT EXISTS conversation_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`
+	createHistoryIndexQuery = "" +
+		`CREATE INDEX IF NOT EXISTS idx_conversation_history_chat_id ` +
+		`ON conversation_history(chat_id, id);`
+	createPersonaTableQuery = `CREATE TABLE IF NOT EXISTS user_personas (
+        user_id INTEGER PRIMARY KEY,
+        user_name TEXT,
+        persona TEXT,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`
+	insertHistoryQuery = `INSERT INTO conversation_history (chat_id, role, text) VALUES (?, ?, ?)`
+	trimHistoryQuery   = `DELETE FROM conversation_history WHERE chat_id = ? AND id NOT IN (
+        SELECT id FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?
+    )`
+	recentHistoryQuery = `SELECT role, text FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?`
+	ensureUserQuery    = `INSERT INTO user_personas (user_id, user_name) VALUES (?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET user_name=COALESCE(NULLIF(excluded.user_name, ''), user_personas.user_name)`
+	setPersonaQuery = `INSERT INTO user_personas (user_id, user_name, persona) VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET persona=excluded.persona,
+        user_name=COALESCE(NULLIF(excluded.user_name, ''), user_personas.user_name),
+        updated_at=CURRENT_TIMESTAMP`
+	personaQuery      = `SELECT persona FROM user_personas WHERE user_id = ?`
+	clearPersonaQuery = `UPDATE user_personas SET persona=NULL, updated_at=CURRENT_TIMESTAMP WHERE user_id = ?`
+)
+
+var (
+	errHistoryPathRequired = errors.New("history path is required")
+	errInvalidMaxPerChat   = errors.New("maxPerChat must be > 0")
+	errNilHistoryStore     = errors.New("history store is nil")
 )
 
 // Turn represents a single role/text pair in a conversation history.
@@ -28,12 +68,12 @@ type Store struct {
 // Open initializes (or creates) the SQLite database at the provided path.
 func Open(path string, maxPerChat int) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("history path is required")
+		return nil, errHistoryPathRequired
 	}
 	if maxPerChat <= 0 {
-		return nil, fmt.Errorf("maxPerChat must be > 0")
+		return nil, errInvalidMaxPerChat
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("create history dir: %w", err)
 	}
 
@@ -42,52 +82,52 @@ func Open(path string, maxPerChat int) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set journal_mode: %w", err)
-	}
-	if _, err := db.Exec(`PRAGMA synchronous=NORMAL;`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set synchronous: %w", err)
-	}
-	createHistoryTable := `CREATE TABLE IF NOT EXISTS conversation_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        text TEXT NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );`
-	if _, err := db.Exec(createHistoryTable); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create conversation_history: %w", err)
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_conversation_history_chat_id ON conversation_history(chat_id, id);`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create index: %w", err)
-	}
+	if err := initDB(db); err != nil {
+		closeDB(db)
 
-	createPersonaTable := `CREATE TABLE IF NOT EXISTS user_personas (
-        user_id INTEGER PRIMARY KEY,
-        user_name TEXT,
-        persona TEXT,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );`
-	if _, err := db.Exec(createPersonaTable); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create user_personas: %w", err)
-	}
-	if _, err := db.Exec(`ALTER TABLE user_personas ADD COLUMN user_name TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			db.Close()
-			return nil, fmt.Errorf("alter user_personas add user_name: %w", err)
-		}
-	}
-	if err := migratePersonaNotNull(db); err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	return &Store{db: db, maxPerChat: maxPerChat}, nil
+}
+
+func initDB(db *sql.DB) error {
+	steps := []struct {
+		query string
+		label string
+	}{
+		{query: `PRAGMA journal_mode=WAL;`, label: "set journal_mode"},
+		{query: `PRAGMA synchronous=NORMAL;`, label: "set synchronous"},
+		{query: createHistoryTableQuery, label: "create conversation_history"},
+		{query: createHistoryIndexQuery, label: "create index"},
+		{query: createPersonaTableQuery, label: "create user_personas"},
+	}
+	for _, step := range steps {
+		if _, err := db.Exec(step.query); err != nil {
+			return fmt.Errorf("%s: %w", step.label, err)
+		}
+	}
+	if err := addUserNameColumn(db); err != nil {
+		return err
+	}
+
+	return migratePersonaNotNull(db)
+}
+
+func addUserNameColumn(db *sql.DB) error {
+	if _, err := db.Exec(`ALTER TABLE user_personas ADD COLUMN user_name TEXT`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return fmt.Errorf("alter user_personas add user_name: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func closeDB(db *sql.DB) {
+	if db != nil {
+		_ = db.Close()
+	}
 }
 
 // Close shuts down the underlying database connection.
@@ -95,13 +135,14 @@ func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+
 	return s.db.Close()
 }
 
 // Append inserts a new conversation turn for the chat and trims history to the configured limit.
 func (s *Store) Append(ctx context.Context, chatID int64, role, text string) error {
 	if s == nil {
-		return fmt.Errorf("history store is nil")
+		return errNilHistoryStore
 	}
 	role = strings.TrimSpace(role)
 	text = strings.TrimSpace(text)
@@ -114,35 +155,36 @@ func (s *Store) Append(ctx context.Context, chatID int64, role, text string) err
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO conversation_history (chat_id, role, text) VALUES (?, ?, ?)`, chatID, role, text); err != nil {
-		tx.Rollback()
+	if _, err := tx.ExecContext(ctx, insertHistoryQuery, chatID, role, text); err != nil {
+		rollbackTx(tx)
+
 		return fmt.Errorf("insert history: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM conversation_history WHERE chat_id = ? AND id NOT IN (
-        SELECT id FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?
-    )`, chatID, chatID, s.maxPerChat); err != nil {
-		tx.Rollback()
+	if _, err := tx.ExecContext(ctx, trimHistoryQuery, chatID, chatID, s.maxPerChat); err != nil {
+		rollbackTx(tx)
+
 		return fmt.Errorf("trim history: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit history tx: %w", err)
 	}
+
 	return nil
 }
 
 // Recent returns the most recent limit turns for the chat in chronological order.
 func (s *Store) Recent(ctx context.Context, chatID int64, limit int) ([]Turn, error) {
 	if s == nil {
-		return nil, fmt.Errorf("history store is nil")
+		return nil, errNilHistoryStore
 	}
 	if limit <= 0 {
 		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT role, text FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?`, chatID, limit)
+	rows, err := s.db.QueryContext(ctx, recentHistoryQuery, chatID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query history: %w", err)
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	turns := make([]Turn, 0, limit)
 	for rows.Next() {
@@ -159,29 +201,30 @@ func (s *Store) Recent(ctx context.Context, chatID int64, limit int) ([]Turn, er
 	for i, j := 0, len(turns)-1; i < j; i, j = i+1, j-1 {
 		turns[i], turns[j] = turns[j], turns[i]
 	}
+
 	return turns, nil
 }
 
 // EnsureUser ensures the user exists in user_personas with a default NULL persona.
 func (s *Store) EnsureUser(ctx context.Context, userID int64, userName string) error {
 	if s == nil {
-		return fmt.Errorf("history store is nil")
+		return errNilHistoryStore
 	}
 	userName = strings.TrimSpace(userName)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO user_personas (user_id, user_name) VALUES (?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET user_name=COALESCE(NULLIF(excluded.user_name, ''), user_personas.user_name)`, userID, userName)
+	_, err := s.db.ExecContext(ctx, ensureUserQuery, userID, userName)
 	if err != nil {
 		return fmt.Errorf("ensure user persona: %w", err)
 	}
+
 	return nil
 }
 
 // SetPersona upserts a persona for a specific user.
 func (s *Store) SetPersona(ctx context.Context, userID int64, userName, persona string) error {
 	if s == nil {
-		return fmt.Errorf("history store is nil")
+		return errNilHistoryStore
 	}
 	persona = strings.TrimSpace(persona)
 	if persona == "" {
@@ -190,53 +233,66 @@ func (s *Store) SetPersona(ctx context.Context, userID int64, userName, persona 
 	userName = strings.TrimSpace(userName)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO user_personas (user_id, user_name, persona) VALUES (?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET persona=excluded.persona, user_name=COALESCE(NULLIF(excluded.user_name, ''), user_personas.user_name), updated_at=CURRENT_TIMESTAMP`,
-		userID, userName, persona); err != nil {
+	if _, err := s.db.ExecContext(ctx, setPersonaQuery, userID, userName, persona); err != nil {
 		return fmt.Errorf("set persona: %w", err)
 	}
+
 	return nil
 }
 
 // Persona returns the stored persona for the user, if any.
 func (s *Store) Persona(ctx context.Context, userID int64) (string, error) {
 	if s == nil {
-		return "", fmt.Errorf("history store is nil")
+		return "", errNilHistoryStore
 	}
 	var persona string
-	err := s.db.QueryRowContext(ctx, `SELECT persona FROM user_personas WHERE user_id = ?`, userID).Scan(&persona)
+	err := s.db.QueryRowContext(ctx, personaQuery, userID).Scan(&persona)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("get persona: %w", err)
 	}
+
 	return persona, nil
 }
 
 // ClearPersona removes any stored persona for the user.
 func (s *Store) ClearPersona(ctx context.Context, userID int64) error {
 	if s == nil {
-		return fmt.Errorf("history store is nil")
+		return errNilHistoryStore
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.db.ExecContext(ctx, `UPDATE user_personas SET persona=NULL, updated_at=CURRENT_TIMESTAMP WHERE user_id = ?`, userID); err != nil {
+	if _, err := s.db.ExecContext(ctx, clearPersonaQuery, userID); err != nil {
 		return fmt.Errorf("clear persona: %w", err)
 	}
+
 	return nil
 }
 
 func migratePersonaNotNull(db *sql.DB) error {
-	type columnInfo struct {
-		name    string
-		notNull bool
+	hasPersona, personaNotNull, err := personaColumnState(db)
+	if err != nil {
+		return err
 	}
+	if !hasPersona {
+		return nil
+	}
+	if !personaNotNull {
+		return nil
+	}
+
+	return rebuildPersonaTable(db)
+}
+
+func personaColumnState(db *sql.DB) (bool, bool, error) {
 	rows, err := db.Query(`PRAGMA table_info(user_personas);`)
 	if err != nil {
-		return fmt.Errorf("pragma table_info user_personas: %w", err)
+		return false, false, fmt.Errorf("pragma table_info user_personas: %w", err)
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	hasPersona := false
 	personaNotNull := false
@@ -246,7 +302,7 @@ func migratePersonaNotNull(db *sql.DB) error {
 		var notnull, pk int
 		var dflt sql.NullString
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return fmt.Errorf("scan table_info: %w", err)
+			return false, false, fmt.Errorf("scan table_info: %w", err)
 		}
 		if name == "persona" {
 			hasPersona = true
@@ -254,19 +310,18 @@ func migratePersonaNotNull(db *sql.DB) error {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("table_info rows error: %w", err)
+		return false, false, fmt.Errorf("table_info rows error: %w", err)
 	}
-	if !hasPersona {
-		return nil
-	}
-	if !personaNotNull {
-		return nil
-	}
+
+	return hasPersona, personaNotNull, nil
+}
+
+func rebuildPersonaTable(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin persona migration: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollbackTx(tx)
 
 	createNew := `CREATE TABLE user_personas_new (
         user_id INTEGER PRIMARY KEY,
@@ -287,5 +342,18 @@ func migratePersonaNotNull(db *sql.DB) error {
 	if _, err := tx.Exec(`ALTER TABLE user_personas_new RENAME TO user_personas`); err != nil {
 		return fmt.Errorf("rename user_personas_new: %w", err)
 	}
+
 	return tx.Commit()
+}
+
+func rollbackTx(tx *sql.Tx) {
+	if tx != nil {
+		_ = tx.Rollback()
+	}
+}
+
+func closeRows(rows *sql.Rows) {
+	if rows != nil {
+		_ = rows.Close()
+	}
 }

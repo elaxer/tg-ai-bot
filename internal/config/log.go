@@ -1,8 +1,15 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"strings"
+)
+
+var (
+	errMissingLogFilePath = errors.New("log_file_path is required")
+	errInvalidLogMaxSize  = errors.New("log_max_size_mb must be > 0")
+	errInvalidLogBackups  = errors.New("log_max_backups must be > 0")
+	errInvalidLogMaxAge   = errors.New("log_max_age_days must be > 0")
 )
 
 type LogConfig struct {
@@ -24,16 +31,17 @@ func (c *LogConfig) applyDefaults() {
 
 func (c *LogConfig) validate() error {
 	if strings.TrimSpace(c.FilePath) == "" {
-		return fmt.Errorf("log_file_path is required")
+		return errMissingLogFilePath
 	}
 	if c.MaxSizeMB <= 0 {
-		return fmt.Errorf("log_max_size_mb must be > 0")
+		return errInvalidLogMaxSize
 	}
 	if c.MaxBackups <= 0 {
-		return fmt.Errorf("log_max_backups must be > 0")
+		return errInvalidLogBackups
 	}
 	if c.MaxAgeDays <= 0 {
-		return fmt.Errorf("log_max_age_days must be > 0")
+		return errInvalidLogMaxAge
 	}
+
 	return nil
 }

@@ -1,3 +1,4 @@
+// Package memes fetches, schedules, and tracks meme deliveries.
 package memes
 
 import (
@@ -20,6 +21,14 @@ const (
 	redditRetryInterval = 500 * time.Millisecond
 )
 
+var (
+	errNoSuitableCandidates = errors.New("no suitable meme candidates")
+	errMemeAPINSFW          = errors.New("meme-api returned nsfw meme")
+	errMemeAPIImageURL      = errors.New("meme-api url is not an image")
+	errRedditStatus         = errors.New("reddit status")
+	errMemeAPIStatus        = errors.New("meme-api status")
+)
+
 var redditListingHosts = [...]string{
 	"https://api.reddit.com",
 	"https://www.reddit.com",
@@ -33,125 +42,6 @@ type memePost struct {
 	ImageURL  string
 	Permalink string
 	Subreddit string
-}
-
-func memeIdentifier(m memePost) string {
-	if id := strings.TrimSpace(m.Permalink); id != "" {
-		return id
-	}
-	return strings.TrimSpace(m.ImageURL)
-}
-
-func fetchRandomMeme(parent context.Context, client *http.Client, subreddit string, timeout time.Duration, rng *rand.Rand) (memePost, error) {
-	ctx := parent
-	cancel := func() {}
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(parent, timeout)
-	}
-	defer cancel()
-
-	if pick, err := fetchFromRedditHosts(ctx, client, subreddit, rng); err == nil {
-		return pick, nil
-	}
-	return fetchFromMemeAPI(ctx, client, subreddit)
-}
-
-func fetchFromRedditHosts(ctx context.Context, client *http.Client, subreddit string, rng *rand.Rand) (memePost, error) {
-	var listing redditListing
-	var lastErr error
-	for _, host := range redditListingHosts {
-		listing, lastErr = fetchRedditListing(ctx, client, host, subreddit)
-		if lastErr == nil {
-			break
-		}
-	}
-	if lastErr != nil {
-		return memePost{}, lastErr
-	}
-
-	candidates := make([]memePost, 0, len(listing.Data.Children))
-	for _, child := range listing.Data.Children {
-		post := child.Data
-		if post.Over18 {
-			continue
-		}
-		imageURL := resolveImageURL(post)
-		if imageURL == "" {
-			continue
-		}
-		title := strings.TrimSpace(post.Title)
-		candidates = append(candidates, memePost{
-			Title:     title,
-			ImageURL:  imageURL,
-			Permalink: post.Permalink,
-			Subreddit: subreddit,
-		})
-	}
-	if len(candidates) == 0 {
-		return memePost{}, errors.New("no suitable meme candidates")
-	}
-	return candidates[rng.Intn(len(candidates))], nil
-}
-
-func fetchRedditListing(ctx context.Context, client *http.Client, baseURL, subreddit string) (redditListing, error) {
-	var listing redditListing
-	apiURL := fmt.Sprintf("%s/r/%s/hot.json?limit=%d&raw_json=1", strings.TrimRight(baseURL, "/"), url.PathEscape(subreddit), redditListingLimit)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return listing, err
-	}
-	req.Header.Set("User-Agent", redditUserAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return listing, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return listing, fmt.Errorf("reddit status %s from %s", resp.Status, baseURL)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
-		return listing, fmt.Errorf("decode reddit listing: %w", err)
-	}
-	return listing, nil
-}
-
-func fetchFromMemeAPI(ctx context.Context, client *http.Client, subreddit string) (memePost, error) {
-	apiURL := fmt.Sprintf(memeAPITemplate, url.PathEscape(subreddit))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return memePost{}, err
-	}
-	req.Header.Set("User-Agent", redditUserAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return memePost{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return memePost{}, fmt.Errorf("meme-api status %s", resp.Status)
-	}
-
-	var payload memeAPIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return memePost{}, fmt.Errorf("decode meme-api: %w", err)
-	}
-	if payload.NSFW {
-		return memePost{}, errors.New("meme-api returned nsfw meme")
-	}
-	imageURL := strings.TrimSpace(payload.URL)
-	if !isDirectImageURL(imageURL) {
-		return memePost{}, errors.New("meme-api url is not an image")
-	}
-	return memePost{
-		Title:     strings.TrimSpace(payload.Title),
-		ImageURL:  imageURL,
-		Permalink: payload.PostLink,
-		Subreddit: payload.Subreddit,
-	}, nil
 }
 
 type memeAPIResponse struct {
@@ -197,6 +87,150 @@ type redditGalleryItem struct {
 	MediaID string `json:"media_id"`
 }
 
+func memeIdentifier(m memePost) string {
+	if id := strings.TrimSpace(m.Permalink); id != "" {
+		return id
+	}
+
+	return strings.TrimSpace(m.ImageURL)
+}
+
+func fetchRandomMeme(
+	parent context.Context,
+	client *http.Client,
+	subreddit string,
+	timeout time.Duration,
+	rng *rand.Rand,
+) (memePost, error) {
+	ctx := parent
+	cancel := func() {}
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(parent, timeout)
+	}
+	defer cancel()
+
+	if pick, err := fetchFromRedditHosts(ctx, client, subreddit, rng); err == nil {
+		return pick, nil
+	}
+
+	return fetchFromMemeAPI(ctx, client, subreddit)
+}
+
+func fetchFromRedditHosts(
+	ctx context.Context,
+	client *http.Client,
+	subreddit string,
+	rng *rand.Rand,
+) (memePost, error) {
+	var listing redditListing
+	var lastErr error
+	for _, host := range redditListingHosts {
+		listing, lastErr = fetchRedditListing(ctx, client, host, subreddit)
+		if lastErr == nil {
+			break
+		}
+	}
+	if lastErr != nil {
+		return memePost{}, lastErr
+	}
+
+	candidates := make([]memePost, 0, len(listing.Data.Children))
+	for _, child := range listing.Data.Children {
+		post := child.Data
+		if post.Over18 {
+			continue
+		}
+		imageURL := resolveImageURL(post)
+		if imageURL == "" {
+			continue
+		}
+		title := strings.TrimSpace(post.Title)
+		candidates = append(candidates, memePost{
+			Title:     title,
+			ImageURL:  imageURL,
+			Permalink: post.Permalink,
+			Subreddit: subreddit,
+		})
+	}
+	if len(candidates) == 0 {
+		return memePost{}, errNoSuitableCandidates
+	}
+
+	return candidates[rng.Intn(len(candidates))], nil
+}
+
+func fetchRedditListing(ctx context.Context, client *http.Client, baseURL, subreddit string) (redditListing, error) {
+	var listing redditListing
+	apiURL := fmt.Sprintf(
+		"%s/r/%s/hot.json?limit=%d&raw_json=1",
+		strings.TrimRight(baseURL, "/"),
+		url.PathEscape(subreddit),
+		redditListingLimit,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return listing, err
+	}
+	req.Header.Set("User-Agent", redditUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return listing, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return listing, fmt.Errorf("%w: status=%s base_url=%s", errRedditStatus, resp.Status, baseURL)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
+		return listing, fmt.Errorf("decode reddit listing: %w", err)
+	}
+
+	return listing, nil
+}
+
+func fetchFromMemeAPI(ctx context.Context, client *http.Client, subreddit string) (memePost, error) {
+	apiURL := fmt.Sprintf(memeAPITemplate, url.PathEscape(subreddit))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return memePost{}, err
+	}
+	req.Header.Set("User-Agent", redditUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return memePost{}, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return memePost{}, fmt.Errorf("%w: status=%s", errMemeAPIStatus, resp.Status)
+	}
+
+	var payload memeAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return memePost{}, fmt.Errorf("decode meme-api: %w", err)
+	}
+	if payload.NSFW {
+		return memePost{}, errMemeAPINSFW
+	}
+	imageURL := strings.TrimSpace(payload.URL)
+	if !isDirectImageURL(imageURL) {
+		return memePost{}, errMemeAPIImageURL
+	}
+
+	return memePost{
+		Title:     strings.TrimSpace(payload.Title),
+		ImageURL:  imageURL,
+		Permalink: payload.PostLink,
+		Subreddit: payload.Subreddit,
+	}, nil
+}
+
 func resolveImageURL(post redditPost) string {
 	direct := strings.TrimSpace(post.URL)
 	if isDirectImageURL(direct) {
@@ -216,6 +250,7 @@ func resolveImageURL(post redditPost) string {
 	if post.PostHint == "image" {
 		return direct
 	}
+
 	return ""
 }
 
@@ -231,6 +266,7 @@ func isDirectImageURL(raw string) bool {
 		return false
 	}
 	path := strings.ToLower(u.Path)
+
 	return hasAllowedImageExt(path)
 }
 
@@ -240,5 +276,6 @@ func hasAllowedImageExt(path string) bool {
 			return true
 		}
 	}
+
 	return false
 }

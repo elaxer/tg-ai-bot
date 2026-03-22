@@ -6,6 +6,12 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+const (
+	chatTypePrivate    = "private"
+	chatTypeGroup      = "group"
+	chatTypeSupergroup = "supergroup"
+)
+
 func (p *Processor) shouldIgnoreMessage(msg *tgbotapi.Message) bool {
 	if msg == nil {
 		return true
@@ -17,16 +23,24 @@ func (p *Processor) shouldIgnoreMessage(msg *tgbotapi.Message) bool {
 		return true
 	}
 	chatType := msg.Chat.Type
-	if chatType != "private" && chatType != "group" && chatType != "supergroup" {
+
+	return !isSupportedChatType(chatType)
+}
+
+func isSupportedChatType(chatType string) bool {
+	switch chatType {
+	case chatTypePrivate, chatTypeGroup, chatTypeSupergroup:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 func (p *Processor) buildResponseDecision(msg *tgbotapi.Message, isPrivate bool) (ResponseDecision, bool) {
 	if isPrivate {
 		return p.buildPrivateDecision(msg)
 	}
+
 	return p.buildGroupDecision(msg)
 }
 
@@ -51,13 +65,7 @@ func (p *Processor) buildPrivateDecision(msg *tgbotapi.Message) (ResponseDecisio
 
 func (p *Processor) buildGroupDecision(msg *tgbotapi.Message) (ResponseDecision, bool) {
 	messageText := getMessageText(msg)
-	tagged := strings.Contains(strings.ToLower(messageText), p.runtime.BotTag)
-	replyToBot := msg.ReplyToMessage != nil &&
-		msg.ReplyToMessage.From != nil &&
-		msg.ReplyToMessage.From.ID == p.bot.Self.ID
-
-	randomReply := p.rng.Float64() < p.cfg.RandomReplyChance
-
+	tagged, replyToBot, randomReply := p.groupTriggers(msg, messageText)
 	if !tagged && !replyToBot && !randomReply {
 		return ResponseDecision{}, false
 	}
@@ -85,4 +93,14 @@ func (p *Processor) buildGroupDecision(msg *tgbotapi.Message) (ResponseDecision,
 		p.rng.Float64() < p.cfg.RandomStickerChance
 
 	return decision, true
+}
+
+func (p *Processor) groupTriggers(msg *tgbotapi.Message, messageText string) (bool, bool, bool) {
+	tagged := strings.Contains(strings.ToLower(messageText), p.runtime.BotTag)
+	replyToBot := msg.ReplyToMessage != nil &&
+		msg.ReplyToMessage.From != nil &&
+		msg.ReplyToMessage.From.ID == p.bot.Self.ID
+	randomReply := p.rng.Float64() < p.cfg.RandomReplyChance
+
+	return tagged, replyToBot, randomReply
 }

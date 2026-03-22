@@ -2,11 +2,13 @@ package chatbot
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
+
+var errHistoryStoreUnavailable = errors.New("history store unavailable")
 
 func (p *Processor) handlePersonaCommand(msg *tgbotapi.Message) bool {
 	if msg == nil || msg.From == nil {
@@ -30,6 +32,7 @@ func (p *Processor) handlePersonaCommand(msg *tgbotapi.Message) bool {
 
 	args := strings.TrimSpace(text[len(fields[0]):])
 	p.processPersonaCommand(msg, args)
+
 	return true
 }
 
@@ -53,8 +56,10 @@ func (p *Processor) processPersonaCommand(msg *tgbotapi.Message, args string) {
 func (p *Processor) executeClearPersona(userID int64, traceID string) string {
 	if err := p.clearUserPersona(userID); err != nil {
 		logError("persona clear failed", "trace_id", traceID, "user_id", userID, "err", err)
+
 		return "Failed to clear persona."
 	}
+
 	return "Persona cleared. I'll use the default style again."
 }
 
@@ -63,14 +68,17 @@ func (p *Processor) executeShowPersona(userID int64) string {
 	if persona == "" {
 		return "You don't have a persona set."
 	}
+
 	return "Your persona:\n" + persona
 }
 
 func (p *Processor) executeSetPersona(info SenderInfo, persona, traceID string) string {
 	if err := p.setUserPersona(info, persona); err != nil {
 		logError("persona update failed", "trace_id", traceID, "user_id", info.ID, "err", err)
+
 		return "Failed to save persona."
 	}
+
 	return "Persona saved. I'll follow it in future replies."
 }
 
@@ -90,19 +98,21 @@ func (p *Processor) sendSystemMessage(msg *tgbotapi.Message, text string, traceI
 
 func (p *Processor) setUserPersona(info SenderInfo, persona string) error {
 	if p.history == nil {
-		return fmt.Errorf("history store unavailable")
+		return errHistoryStoreUnavailable
 	}
 	name := strings.TrimSpace(info.Username)
 	if name == "" {
 		name = strings.TrimSpace(info.DisplayName)
 	}
+
 	return p.history.SetPersona(context.Background(), info.ID, name, persona)
 }
 
 func (p *Processor) clearUserPersona(userID int64) error {
 	if p.history == nil {
-		return fmt.Errorf("history store unavailable")
+		return errHistoryStoreUnavailable
 	}
+
 	return p.history.ClearPersona(context.Background(), userID)
 }
 
@@ -113,7 +123,9 @@ func (p *Processor) getUserPersona(userID int64) string {
 	persona, err := p.history.Persona(context.Background(), userID)
 	if err != nil {
 		logError("load persona failed", "user_id", userID, "err", err)
+
 		return ""
 	}
+
 	return persona
 }

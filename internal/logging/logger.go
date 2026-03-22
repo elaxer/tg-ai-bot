@@ -1,6 +1,8 @@
+// Package logging provides process-wide structured logging helpers.
 package logging
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,13 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+var (
+	mu     sync.RWMutex
+	logger *zap.SugaredLogger
+
+	errMissingLogPath = errors.New("log file path is required")
+)
+
 type Config struct {
 	FilePath   string
 	Level      string
@@ -21,16 +30,11 @@ type Config struct {
 	Compress   bool
 }
 
-var (
-	mu     sync.RWMutex
-	logger *zap.SugaredLogger
-)
-
 func Init(cfg Config) error {
 	if cfg.FilePath == "" {
-		return fmt.Errorf("log file path is required")
+		return errMissingLogPath
 	}
-	if err := os.MkdirAll(filepath.Dir(cfg.FilePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.FilePath), 0o750); err != nil {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
@@ -79,6 +83,7 @@ func Init(cfg Config) error {
 		_ = logger.Sync()
 	}
 	logger = sugar
+
 	return nil
 }
 
@@ -135,6 +140,7 @@ func withLogger(fn func(*zap.SugaredLogger)) {
 		s := fallback.Sugar()
 		defer func() { _ = s.Sync() }()
 		fn(s)
+
 		return
 	}
 	fn(l)

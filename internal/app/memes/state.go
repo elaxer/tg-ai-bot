@@ -28,11 +28,14 @@ type memeStateFile struct {
 }
 
 func loadKnownChats(path string) (map[int64]string, error) {
-	b, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 -- state path is an explicit config input.
+	b, err := os.ReadFile(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return map[int64]string{}, nil
 		}
+
 		return nil, fmt.Errorf("read known chats file: %w", err)
 	}
 	var payload dailyStateFile
@@ -47,16 +50,20 @@ func loadKnownChats(path string) (map[int64]string, error) {
 		}
 		chats[chatID] = strings.TrimSpace(chat.Title)
 	}
+
 	return chats, nil
 }
 
 func loadMemeState(path string) (map[int64]chatMemeState, error) {
 	state := make(map[int64]chatMemeState)
-	b, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	// #nosec G304 -- state path is an explicit config input.
+	b, err := os.ReadFile(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return state, nil
 		}
+
 		return nil, fmt.Errorf("read meme state: %w", err)
 	}
 	if len(b) == 0 {
@@ -73,6 +80,7 @@ func loadMemeState(path string) (map[int64]chatMemeState, error) {
 		}
 		state[chatID] = chat
 	}
+
 	return state, nil
 }
 
@@ -81,15 +89,16 @@ func saveMemeState(path string, state map[int64]chatMemeState) error {
 	for chatID, chat := range state {
 		payload.Chats[strconv.FormatInt(chatID, 10)] = chat
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
 	b, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal meme state: %w", err)
 	}
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+	if err := os.WriteFile(path, b, 0o600); err != nil {
 		return fmt.Errorf("write meme state: %w", err)
 	}
+
 	return nil
 }

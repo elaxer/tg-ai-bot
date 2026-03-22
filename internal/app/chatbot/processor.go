@@ -11,7 +11,14 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func NewProcessor(bot *tgbotapi.BotAPI, cfg config.Bot, runtime config.Runtime, openaiClient *openai.Client, rng *rand.Rand, historyStore *history.Store) *Processor {
+func NewProcessor(
+	bot *tgbotapi.BotAPI,
+	cfg config.Bot,
+	runtime config.Runtime,
+	openaiClient *openai.Client,
+	rng *rand.Rand,
+	historyStore *history.Store,
+) *Processor {
 	runtime.BotTag = "@" + strings.ToLower(bot.Self.UserName)
 	p := &Processor{
 		bot:       bot,
@@ -24,6 +31,7 @@ func NewProcessor(bot *tgbotapi.BotAPI, cfg config.Bot, runtime config.Runtime, 
 		history:   historyStore,
 	}
 	p.loadDailyState()
+
 	return p
 }
 
@@ -44,7 +52,7 @@ func (p *Processor) processIncomingMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	isPrivate := msg.Chat.Type == "private"
+	isPrivate := msg.Chat.Type == chatTypePrivate
 	if !isPrivate {
 		p.touchChat(msg.Chat.ID, chatName(msg.Chat))
 	}
@@ -66,6 +74,7 @@ func (p *Processor) maybeReactToMessage(msg *tgbotapi.Message, traceID string) {
 	emoji := p.reactions[p.rng.Intn(len(p.reactions))]
 	if err := p.setMessageReaction(msg.Chat.ID, msg.MessageID, emoji); err != nil {
 		logError("set reaction failed", "trace_id", traceID, "err", err)
+
 		return
 	}
 	logInfo("reacted to message", "trace_id", traceID, "emoji", emoji)

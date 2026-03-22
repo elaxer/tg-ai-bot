@@ -1,3 +1,4 @@
+// Package chatbot handles Telegram update processing and response generation.
 package chatbot
 
 import (
@@ -12,15 +13,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-type MessageTrigger string
-
-const (
-	TriggerTag        MessageTrigger = "tag"
-	TriggerReplyToBot MessageTrigger = "reply_to_bot"
-	TriggerRandom     MessageTrigger = "random"
-	TriggerPrivate    MessageTrigger = "private"
-)
-
 const (
 	dailyStatePath      = "data/daily_messages_state.json"
 	stickerDelayMin     = 3 * time.Second
@@ -28,9 +20,16 @@ const (
 	chatHistoryMaxTurns = 20
 	chatRoleUser        = "user"
 	chatRoleAssistant   = "assistant"
+
+	TriggerTag        MessageTrigger = "tag"
+	TriggerReplyToBot MessageTrigger = "reply_to_bot"
+	TriggerRandom     MessageTrigger = "random"
+	TriggerPrivate    MessageTrigger = "private"
 )
 
 const DefaultChatHistoryTurns = chatHistoryMaxTurns
+
+type MessageTrigger string
 
 type SenderInfo struct {
 	ID          int64
