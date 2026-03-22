@@ -19,7 +19,7 @@ bin/
 bot.config.yaml
 
 # Local build artifact from `go build ./...`
-bot
+/bot
 
 # Local runtime state (chat logs, scheduler state)
 data/
