@@ -62,6 +62,7 @@ func LoadBot(path string) (Bot, error) {
 	}
 
 	cfg.applyDefaults()
+	cfg.resolveRelativePaths(filepath.Dir(cleanPath))
 	if err := cfg.validate(); err != nil {
 		return cfg, err
 	}
@@ -189,6 +190,20 @@ func (c *Bot) applyDefaults() {
 		}
 	}
 	c.Reactions = cleanedReactions
+}
+
+func (c *Bot) resolveRelativePaths(baseDir string) {
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "" {
+		return
+	}
+
+	if c.Log.FilePath != "" && !filepath.IsAbs(c.Log.FilePath) {
+		c.Log.FilePath = filepath.Join(baseDir, c.Log.FilePath)
+	}
+	if c.DBPath != "" && !filepath.IsAbs(c.DBPath) {
+		c.DBPath = filepath.Join(baseDir, c.DBPath)
+	}
 }
 
 func (c *Bot) validate() error {

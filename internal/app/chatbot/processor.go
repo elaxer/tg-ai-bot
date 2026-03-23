@@ -46,6 +46,9 @@ func (p *Processor) processIncomingMessage(msg *tgbotapi.Message) {
 	if msg.From != nil {
 		p.ensureUserRecord(msg.From)
 	}
+	if p.handleContextCommand(msg) {
+		return
+	}
 	if p.handlePersonaCommand(msg) {
 		return
 	}

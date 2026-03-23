@@ -20,6 +20,7 @@ const (
         SELECT id FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?
     )`
 	recentHistoryQuery = `SELECT role, text FROM conversation_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?`
+	clearHistoryQuery  = `DELETE FROM conversation_history WHERE chat_id = ?`
 	ensureUserQuery    = `INSERT INTO user_personas (user_id, user_name) VALUES (?, ?)
         ON CONFLICT(user_id) DO UPDATE SET user_name=COALESCE(NULLIF(excluded.user_name, ''), user_personas.user_name)`
 	setPersonaQuery = `INSERT INTO user_personas (user_id, user_name, persona) VALUES (?, ?, ?)
@@ -171,6 +172,20 @@ func (s *Store) Recent(ctx context.Context, chatID int64, limit int) ([]Turn, er
 	}
 
 	return turns, nil
+}
+
+// ClearChat deletes all stored conversation history for the chat.
+func (s *Store) ClearChat(ctx context.Context, chatID int64) error {
+	if s == nil {
+		return errNilHistoryStore
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.ExecContext(ctx, clearHistoryQuery, chatID); err != nil {
+		return fmt.Errorf("clear chat history: %w", err)
+	}
+
+	return nil
 }
 
 // EnsureUser ensures the user exists in user_personas with a default NULL persona.

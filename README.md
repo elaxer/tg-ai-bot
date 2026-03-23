@@ -29,10 +29,19 @@ Optional custom config path:
 export BOT_CONFIG_PATH=./bot.config.yaml
 ```
 
+Startup now looks for `.env` and the default `bot.config.yaml` in the current working directory first, then falls back to the binary's directory. This makes `go run ./cmd/bot` from the repo root and running `./bin/...` from the repo root pick up the root-level files as expected. Relative paths inside the config file, such as `log_file_path` and `conversation_db_path`, are still resolved relative to that config file.
+
 ## Run
 
 ```bash
 go run ./cmd/bot
+```
+
+Built binary from the repo root:
+
+```bash
+go build -o ./bin/bot ./cmd/bot
+./bin/bot
 ```
 
 ## ELK Log Viewer (Docker Compose)
@@ -100,7 +109,9 @@ docker compose -f docker-compose.elk.yml down
 - It can also respond randomly to about 1 out of 10 regular group messages.
 - In private chats (`type=private`) it now responds to every incoming message and keeps a short rolling memory (about 20 turns) so conversations feel like ChatGPT.
 - In group chats the bot also keeps a short per-chat memory (about 20 recent turns it participated in) so follow-up mentions have context.
-- Each user can set a personal tone for replies with `/persona <instructions>` (or `!persona ...`); use `/persona show` to view it or `/persona clear` to reset.
+- Use `/context_show` to inspect the stored conversation history for the current chat.
+- Use `/context_clear` to wipe the stored conversation history for the current chat.
+- Each user can set a personal tone for replies with `/persona <instructions>` (or `!persona ...`); use `/persona_show` to view it or `/persona_clear` to reset.
 - Logs are written in JSON to `log_file_path` with rotation enabled.
 - Reply delay is automatically calculated from incoming message length.
 - If stickers are configured, it can randomly send a random sticker instead of text.

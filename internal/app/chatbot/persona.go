@@ -22,32 +22,79 @@ func (p *Processor) handlePersonaCommand(msg *tgbotapi.Message) bool {
 	if len(fields) == 0 {
 		return false
 	}
-	cmdToken := strings.ToLower(fields[0])
-	if idx := strings.Index(cmdToken, "@"); idx >= 0 {
-		cmdToken = cmdToken[:idx]
-	}
-	if cmdToken != "/persona" && cmdToken != "!persona" {
+	cmdToken, args, action, ok := parsePersonaCommand(text)
+	if !ok {
 		return false
 	}
 
-	args := strings.TrimSpace(text[len(fields[0]):])
-	p.processPersonaCommand(msg, args)
+	switch cmdToken {
+	case "/persona", "!persona":
+		p.processPersonaSetCommand(msg, args)
+	case "/persona_clear", "!persona_clear":
+		p.processPersonaControlCommand(msg, action)
+	case "/persona_show", "!persona_show":
+		p.processPersonaControlCommand(msg, action)
+	}
 
 	return true
 }
 
-func (p *Processor) processPersonaCommand(msg *tgbotapi.Message, args string) {
+type personaCommandAction string
+
+const (
+	personaCommandClear personaCommandAction = "clear"
+	personaCommandShow  personaCommandAction = "show"
+)
+
+func parsePersonaCommand(text string) (cmdToken string, args string, action personaCommandAction, ok bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", "", "", false
+	}
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return "", "", "", false
+	}
+	cmdToken = strings.ToLower(fields[0])
+	if idx := strings.Index(cmdToken, "@"); idx >= 0 {
+		cmdToken = cmdToken[:idx]
+	}
+
+	switch cmdToken {
+	case "/persona", "!persona":
+		return cmdToken, strings.TrimSpace(text[len(fields[0]):]), "", true
+	case "/persona_clear", "!persona_clear":
+		return cmdToken, "", personaCommandClear, true
+	case "/persona_show", "!persona_show":
+		return cmdToken, "", personaCommandShow, true
+	default:
+		return "", "", "", false
+	}
+}
+
+func (p *Processor) processPersonaSetCommand(msg *tgbotapi.Message, args string) {
 	traceID := newTraceID(msg.Chat.ID, msg.MessageID)
 	senderInfo := extractSenderInfo(msg)
-	response := ""
+	if args == "" {
+		p.sendSystemMessage(msg, "Usage: /persona <instructions>", traceID)
 
-	switch {
-	case args == "" || strings.EqualFold(args, "clear") || strings.EqualFold(args, "reset"):
+		return
+	}
+
+	response := p.executeSetPersona(senderInfo, args, traceID)
+	p.sendSystemMessage(msg, response, traceID)
+}
+
+func (p *Processor) processPersonaControlCommand(msg *tgbotapi.Message, action personaCommandAction) {
+	traceID := newTraceID(msg.Chat.ID, msg.MessageID)
+	senderInfo := extractSenderInfo(msg)
+
+	response := ""
+	switch action {
+	case personaCommandClear:
 		response = p.executeClearPersona(senderInfo.ID, traceID)
-	case strings.EqualFold(args, "show"):
+	case personaCommandShow:
 		response = p.executeShowPersona(senderInfo.ID)
-	default:
-		response = p.executeSetPersona(senderInfo, args, traceID)
 	}
 
 	p.sendSystemMessage(msg, response, traceID)
@@ -84,7 +131,7 @@ func (p *Processor) executeSetPersona(info SenderInfo, persona, traceID string) 
 
 func (p *Processor) sendSystemMessage(msg *tgbotapi.Message, text string, traceID string) {
 	text = strings.TrimSpace(text)
-	if text == "" {
+	if text == "" || p.bot == nil {
 		return
 	}
 	out := tgbotapi.NewMessage(msg.Chat.ID, text)

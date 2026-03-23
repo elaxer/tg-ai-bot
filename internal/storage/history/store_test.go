@@ -69,6 +69,43 @@ func TestStoreAppendRecentAndTrim(t *testing.T) {
 	}
 }
 
+func TestStoreClearChat(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t, 5)
+	defer func() {
+		_ = store.Close()
+	}()
+
+	ctx := context.Background()
+	if err := store.Append(ctx, 1, "user", "first"); err != nil {
+		t.Fatalf("Append(chat=1) error = %v", err)
+	}
+	if err := store.Append(ctx, 2, "user", "second"); err != nil {
+		t.Fatalf("Append(chat=2) error = %v", err)
+	}
+
+	if err := store.ClearChat(ctx, 1); err != nil {
+		t.Fatalf("ClearChat() error = %v", err)
+	}
+
+	turns, err := store.Recent(ctx, 1, 5)
+	if err != nil {
+		t.Fatalf("Recent(chat=1) error = %v", err)
+	}
+	if len(turns) != 0 {
+		t.Fatalf("Recent(chat=1) len = %d, want 0", len(turns))
+	}
+
+	turns, err = store.Recent(ctx, 2, 5)
+	if err != nil {
+		t.Fatalf("Recent(chat=2) error = %v", err)
+	}
+	if len(turns) != 1 || turns[0].Text != "second" {
+		t.Fatalf("Recent(chat=2) = %#v, want untouched history", turns)
+	}
+}
+
 func TestStorePersonaLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -117,6 +154,9 @@ func TestNilStoreMethods(t *testing.T) {
 	}
 	if _, err := store.Recent(ctx, 1, 1); !errors.Is(err, errNilHistoryStore) {
 		t.Fatalf("Recent() error = %v, want %v", err, errNilHistoryStore)
+	}
+	if err := store.ClearChat(ctx, 1); !errors.Is(err, errNilHistoryStore) {
+		t.Fatalf("ClearChat() error = %v, want %v", err, errNilHistoryStore)
 	}
 	if err := store.EnsureUser(ctx, 1, "alice"); !errors.Is(err, errNilHistoryStore) {
 		t.Fatalf("EnsureUser() error = %v, want %v", err, errNilHistoryStore)

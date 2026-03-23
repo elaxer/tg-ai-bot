@@ -283,7 +283,7 @@ func buildContextPrompt(in ReplyInput) string {
 func (c *Client) buildInstructions(persona string) string {
 	persona = strings.TrimSpace(persona)
 	if persona != "" {
-		return persona + "\n\n" + messageFormatGuidelines
+		return messageFormatGuidelines + ". " + persona
 	}
 	base := strings.TrimSpace(c.SystemPrompt)
 	if base == "" {

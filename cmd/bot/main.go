@@ -4,7 +4,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"strings"
+	"path/filepath"
 	"time"
 
 	"github.com/elaxer/tg-ai-bot/internal/app/chatbot"
@@ -21,14 +21,20 @@ const defaultBotConfigPath = "bot.config.yaml"
 func main() {
 	log.SetFlags(log.LstdFlags)
 
-	if err := config.LoadDotEnv(".env"); err != nil {
+	execDir, err := executableDir()
+	if err != nil {
+		log.Fatalf("[ERROR] failed to resolve executable dir: %v", err)
+	}
+	workDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("[ERROR] failed to resolve working dir: %v", err)
+	}
+
+	if err := config.LoadDotEnv(resolveDotEnvPath(workDir, execDir)); err != nil {
 		log.Fatalf("[ERROR] failed to load .env: %v", err)
 	}
 
-	configPath := strings.TrimSpace(os.Getenv("BOT_CONFIG_PATH"))
-	if configPath == "" {
-		configPath = defaultBotConfigPath
-	}
+	configPath := resolveConfigPath(workDir, execDir, os.Getenv("BOT_CONFIG_PATH"))
 
 	botCfg, err := config.LoadBot(configPath)
 	if err != nil {
@@ -103,4 +109,61 @@ func main() {
 	for update := range updates {
 		processor.HandleUpdate(update)
 	}
+}
+
+func executableDir() (string, error) {
+	execPath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(execPath)
+	if err == nil {
+		execPath = resolvedPath
+	}
+
+	return filepath.Dir(execPath), nil
+}
+
+func resolveDotEnvPath(workDir, execDir string) string {
+	return firstExistingPath(
+		filepath.Join(workDir, ".env"),
+		filepath.Join(execDir, ".env"),
+	)
+}
+
+func resolveConfigPath(workDir, execDir, envPath string) string {
+	if envPath != "" {
+		if filepath.IsAbs(envPath) {
+			return filepath.Clean(envPath)
+		}
+
+		return filepath.Join(workDir, envPath)
+	}
+
+	return firstExistingPath(
+		filepath.Join(workDir, defaultBotConfigPath),
+		filepath.Join(execDir, defaultBotConfigPath),
+	)
+}
+
+func firstExistingPath(paths ...string) string {
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+
+		cleanPath := filepath.Clean(path)
+		if _, err := os.Stat(cleanPath); err == nil {
+			return cleanPath
+		}
+	}
+
+	for _, path := range paths {
+		if path != "" {
+			return filepath.Clean(path)
+		}
+	}
+
+	return ""
 }

@@ -28,7 +28,7 @@ bot_sticker_file_ids: [" one ", "", "two"]
 		t.Fatalf("LoadBot() error = %v", err)
 	}
 
-	assertBotDefaults(t, cfg)
+	assertBotDefaults(t, cfg, filepath.Dir(configPath))
 	assertCleanedBotLists(t, cfg)
 }
 
@@ -54,13 +54,47 @@ conversation_db_path: "data/conversations.db"
 	}
 }
 
-func assertBotDefaults(t *testing.T, cfg Bot) {
+func TestLoadBotResolvesRelativePathsFromConfigDir(t *testing.T) {
+	t.Parallel()
+
+	configDir := filepath.Join(t.TempDir(), "deploy")
+	configPath := filepath.Join(configDir, "bot.yaml")
+	content := []byte(`
+log_file_path: "logs/bot.log"
+conversation_db_path: "data/conversations.db"
+bot_reactions: ["👍"]
+bot_random_reply_chance: 0.25
+bot_reaction_chance: 0.5
+bot_random_sticker_chance: 0.1
+bot_tts_reply_chance: 0.2
+`)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(configPath, content, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := LoadBot(configPath)
+	if err != nil {
+		t.Fatalf("LoadBot() error = %v", err)
+	}
+
+	if cfg.Log.FilePath != filepath.Join(configDir, "logs", "bot.log") {
+		t.Fatalf("Log.FilePath = %q", cfg.Log.FilePath)
+	}
+	if cfg.DBPath != filepath.Join(configDir, "data", "conversations.db") {
+		t.Fatalf("DBPath = %q", cfg.DBPath)
+	}
+}
+
+func assertBotDefaults(t *testing.T, cfg Bot, baseDir string) {
 	t.Helper()
 
-	if cfg.DBPath != "data/conversations.db" {
+	if cfg.DBPath != filepath.Join(baseDir, "data", "conversations.db") {
 		t.Fatalf("DBPath = %q, want default", cfg.DBPath)
 	}
-	if cfg.Log.FilePath != "logs/bot.log" {
+	if cfg.Log.FilePath != filepath.Join(baseDir, "logs", "bot.log") {
 		t.Fatalf("Log.FilePath = %q, want default", cfg.Log.FilePath)
 	}
 	if cfg.OpenAI.Model != "gpt-4.1-mini" {

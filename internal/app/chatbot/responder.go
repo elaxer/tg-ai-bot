@@ -153,7 +153,7 @@ func (p *Processor) sendStickerReply(msg *tgbotapi.Message, traceID string) bool
 
 		return false
 	}
-	p.logSentResponse("sticker", traceID, sent)
+	p.logSentResponse("sticker", traceID, sent, fileID)
 
 	return true
 }
@@ -173,7 +173,7 @@ func (p *Processor) tryVoiceReply(
 
 		return false
 	}
-	if _, ok := p.sendVoiceReply(msg, audioData, traceID); ok {
+	if _, ok := p.sendVoiceReply(msg, audioData, traceID, replyText); ok {
 		p.appendChatHistory(msg.Chat.ID, chatRoleAssistant, replyText)
 
 		return true
@@ -194,12 +194,12 @@ func (p *Processor) sendTextReply(msg *tgbotapi.Message, replyText string, trace
 
 		return 0, false
 	}
-	p.logSentResponse("message", traceID, sent)
+	p.logSentResponse("message", traceID, sent, outMsg.Text)
 
 	return sent.MessageID, true
 }
 
-func (p *Processor) sendVoiceReply(msg *tgbotapi.Message, audioData []byte, traceID string) (int, bool) {
+func (p *Processor) sendVoiceReply(msg *tgbotapi.Message, audioData []byte, traceID, replyText string) (int, bool) {
 	voice := tgbotapi.NewVoice(msg.Chat.ID, tgbotapi.FileBytes{
 		Name:  "reply.ogg",
 		Bytes: audioData,
@@ -214,7 +214,7 @@ func (p *Processor) sendVoiceReply(msg *tgbotapi.Message, audioData []byte, trac
 
 		return 0, false
 	}
-	p.logSentResponse("voice", traceID, sent)
+	p.logSentResponse("voice", traceID, sent, replyText)
 
 	return sent.MessageID, true
 }
@@ -291,8 +291,8 @@ func (p *Processor) logImageMessage(traceID string, imageURL string) {
 	}
 }
 
-func (p *Processor) logSentResponse(respType, traceID string, sent tgbotapi.Message) {
-	logInfo("sent "+respType, "trace_id", traceID, "chat_id", sent.Chat.ID, "msg_id", sent.MessageID)
+func (p *Processor) logSentResponse(respType, traceID string, sent tgbotapi.Message, data any) {
+	logInfo("sent "+respType, "trace_id", traceID, "chat_id", sent.Chat.ID, "msg_id", sent.MessageID, "data", data)
 }
 
 func onceStop(fn func()) func() {
