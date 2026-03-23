@@ -95,7 +95,7 @@ func TestResolveConfigPathKeepsAbsoluteEnvPath(t *testing.T) {
 func writeTestFile(t *testing.T, path string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	if err := os.WriteFile(path, []byte("test"), 0o600); err != nil {

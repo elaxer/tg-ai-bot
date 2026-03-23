@@ -68,7 +68,7 @@ bot_reaction_chance: 0.5
 bot_random_sticker_chance: 0.1
 bot_tts_reply_chance: 0.2
 `)
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	if err := os.WriteFile(configPath, content, 0o600); err != nil {

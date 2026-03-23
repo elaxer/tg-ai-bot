@@ -14,12 +14,48 @@ func TestParsePersonaCommandRecognizesUpdatedCommands(t *testing.T) {
 		wantAction personaCommandAction
 	}{
 		{name: "set command", text: "/persona be concise", wantOK: true, wantToken: "/persona", wantArgs: "be concise"},
-		{name: "show command", text: "/persona_show", wantOK: true, wantToken: "/persona_show", wantAction: personaCommandShow},
-		{name: "clear command", text: "/persona_clear", wantOK: true, wantToken: "/persona_clear", wantAction: personaCommandClear},
-		{name: "show command bang", text: "!persona_show", wantOK: true, wantToken: "!persona_show", wantAction: personaCommandShow},
-		{name: "legacy show becomes regular persona text", text: "/persona show", wantOK: true, wantToken: "/persona", wantArgs: "show"},
-		{name: "legacy clear becomes regular persona text", text: "/persona clear", wantOK: true, wantToken: "/persona", wantArgs: "clear"},
-		{name: "bot mention suffix", text: "/persona_show@MyBot", wantOK: true, wantToken: "/persona_show", wantAction: personaCommandShow},
+		{
+			name:       "show command",
+			text:       "/persona_show",
+			wantOK:     true,
+			wantToken:  "/persona_show",
+			wantAction: personaCommandShow,
+		},
+		{
+			name:       "clear command",
+			text:       "/persona_clear",
+			wantOK:     true,
+			wantToken:  "/persona_clear",
+			wantAction: personaCommandClear,
+		},
+		{
+			name:       "show command bang",
+			text:       "!persona_show",
+			wantOK:     true,
+			wantToken:  "!persona_show",
+			wantAction: personaCommandShow,
+		},
+		{
+			name:      "legacy show becomes regular persona text",
+			text:      "/persona show",
+			wantOK:    true,
+			wantToken: "/persona",
+			wantArgs:  "show",
+		},
+		{
+			name:      "legacy clear becomes regular persona text",
+			text:      "/persona clear",
+			wantOK:    true,
+			wantToken: "/persona",
+			wantArgs:  "clear",
+		},
+		{
+			name:       "bot mention suffix",
+			text:       "/persona_show@MyBot",
+			wantOK:     true,
+			wantToken:  "/persona_show",
+			wantAction: personaCommandShow,
+		},
 		{name: "unknown command", text: "/persona_reset", wantOK: false},
 	}
 

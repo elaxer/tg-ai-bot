@@ -21,6 +21,33 @@ const defaultBotConfigPath = "bot.config.yaml"
 func main() {
 	log.SetFlags(log.LstdFlags)
 
+	botCfg, runtimeCfg, configPath := mustLoadStartupConfig()
+	historyStore := mustOpenHistoryStore(botCfg)
+	defer closeHistoryStore(historyStore)
+
+	tgBot, err := tgbotapi.NewBotAPI(runtimeCfg.TelegramToken)
+	if err != nil {
+		logging.Fatalw("failed to create telegram bot client", "err", err)
+	}
+	tgBot.Debug = botCfg.Debug
+
+	openaiClient := openai.NewClient(
+		runtimeCfg.OpenAIAPIKey,
+		botCfg.OpenAI.Model,
+		botCfg.OpenAI.TTSModel,
+		botCfg.OpenAI.TTSVoice,
+		botCfg.OpenAI.TTSInstructions,
+		botCfg.OpenAI.SystemPrompt,
+	)
+	//nolint:gosec // Non-cryptographic randomness is sufficient for conversational variation.
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	processor := chatbot.NewProcessor(tgBot, botCfg, runtimeCfg, openaiClient, rng, historyStore)
+
+	logStartup(botCfg, tgBot, configPath)
+	processUpdates(tgBot, processor)
+}
+
+func mustLoadStartupConfig() (config.Bot, config.Runtime, string) {
 	execDir, err := executableDir()
 	if err != nil {
 		log.Fatalf("[ERROR] failed to resolve executable dir: %v", err)
@@ -57,34 +84,40 @@ func main() {
 		logging.Fatalw("missing required runtime env", "err", err)
 	}
 
-	tgBot, err := tgbotapi.NewBotAPI(runtimeCfg.TelegramToken)
-	if err != nil {
-		logging.Fatalw("failed to create telegram bot client", "err", err)
+	return botCfg, runtimeCfg, configPath
+}
+
+func mustOpenHistoryStore(botCfg config.Bot) *history.Store {
+	if err := logging.Init(logging.Config{
+		FilePath:   botCfg.Log.FilePath,
+		Level:      botCfg.Log.Level,
+		MaxSizeMB:  botCfg.Log.MaxSizeMB,
+		MaxBackups: botCfg.Log.MaxBackups,
+		MaxAgeDays: botCfg.Log.MaxAgeDays,
+		Compress:   botCfg.Log.Compress,
+	}); err != nil {
+		log.Fatalf("[ERROR] failed to init logger: %v", err)
 	}
-	tgBot.Debug = botCfg.Debug
 
 	historyStore, err := history.Open(botCfg.DBPath, chatbot.DefaultChatHistoryTurns)
 	if err != nil {
 		logging.Fatalw("failed to open history store", "path", botCfg.DBPath, "err", err)
 	}
-	defer func() {
+
+	return historyStore
+}
+
+func closeHistoryStore(historyStore *history.Store) {
+	defer logging.Sync()
+
+	if historyStore != nil {
 		if err := historyStore.Close(); err != nil {
 			logging.Errorw("failed to close history store", "err", err)
 		}
-	}()
+	}
+}
 
-	openaiClient := openai.NewClient(
-		runtimeCfg.OpenAIAPIKey,
-		botCfg.OpenAI.Model,
-		botCfg.OpenAI.TTSModel,
-		botCfg.OpenAI.TTSVoice,
-		botCfg.OpenAI.TTSInstructions,
-		botCfg.OpenAI.SystemPrompt,
-	)
-	//nolint:gosec // Non-cryptographic randomness is sufficient for conversational variation.
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	processor := chatbot.NewProcessor(tgBot, botCfg, runtimeCfg, openaiClient, rng, historyStore)
-
+func logStartup(botCfg config.Bot, tgBot *tgbotapi.BotAPI, configPath string) {
 	logging.Infow(
 		"bot started",
 		"config_path", configPath,
@@ -102,6 +135,9 @@ func main() {
 		"delay_mode", "message_length",
 		"conversation_db", botCfg.DBPath,
 	)
+}
+
+func processUpdates(tgBot *tgbotapi.BotAPI, processor *chatbot.Processor) {
 	updateCfg := tgbotapi.NewUpdate(0)
 	updateCfg.Timeout = 30
 

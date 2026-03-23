@@ -8,7 +8,14 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+const (
+	personaCommandClear personaCommandAction = "clear"
+	personaCommandShow  personaCommandAction = "show"
+)
+
 var errHistoryStoreUnavailable = errors.New("history store unavailable")
+
+type personaCommandAction string
 
 func (p *Processor) handlePersonaCommand(msg *tgbotapi.Message) bool {
 	if msg == nil || msg.From == nil {
@@ -38,13 +45,6 @@ func (p *Processor) handlePersonaCommand(msg *tgbotapi.Message) bool {
 
 	return true
 }
-
-type personaCommandAction string
-
-const (
-	personaCommandClear personaCommandAction = "clear"
-	personaCommandShow  personaCommandAction = "show"
-)
 
 func parsePersonaCommand(text string) (cmdToken string, args string, action personaCommandAction, ok bool) {
 	text = strings.TrimSpace(text)

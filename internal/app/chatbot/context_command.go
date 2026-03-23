@@ -21,6 +21,7 @@ func (p *Processor) handleContextCommand(msg *tgbotapi.Message) bool {
 		p.processClearContextCommand(msg)
 	case "/context_show", "!context_show":
 		p.processShowContextCommand(msg)
+
 		return true
 	default:
 		return false
